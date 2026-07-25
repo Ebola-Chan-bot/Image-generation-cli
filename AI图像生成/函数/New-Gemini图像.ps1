@@ -67,13 +67,10 @@
     $凭据 = Resolve-配置凭据 -参数密钥 $密钥 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
 
-    # 参考图
-    $参考图路径列表 = @()
+    # 参考图（支持本地路径和 URL）
+    $参考图数据列表 = @()
     if ($参考图) {
-        foreach ($单张 in $参考图) {
-            if (-not (Test-Path -LiteralPath $单张 -PathType Leaf)) { throw "参考图不存在：$单张" }
-            $参考图路径列表 += $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($单张)
-        }
+        foreach ($单张 in $参考图) { $参考图数据列表 += Get-图像数据 -来源 $单张 }
     }
 
     # 宽高比
@@ -90,11 +87,11 @@
     # 构造 contents
     $部件列表 = [System.Collections.Generic.List[object]]::new()
     $部件列表.Add(@{ text = $提示词 })
-    foreach ($p in $参考图路径列表) {
+    foreach ($d in $参考图数据列表) {
         $部件列表.Add(@{
                 inline_data = @{
-                    mime_type = Get-Mime类型 -路径 $p
-                    data      = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($p))
+                    mime_type = Get-Mime类型 -路径 $d.文件名
+                    data      = [Convert]::ToBase64String($d.字节)
                 }
             })
     }

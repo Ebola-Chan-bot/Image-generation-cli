@@ -17,7 +17,7 @@
     .PARAMETER 模型
         模型名。未指定时查找已记住的值。
     .PARAMETER 尺寸
-        1024x1024 | 1536x1024 | 1024x1536 | auto。默认 auto。
+        自定义 WxH 像素（auto 为默认）。需满足：最长边 ≤3840、宽高均为 16 的倍数、长宽比 ≤3:1、总像素 655360~8294400。默认 auto。
     .PARAMETER 质量
         low | medium | high | auto。默认 auto。
     .PARAMETER 输出路径
@@ -48,7 +48,6 @@
         [Parameter()][string]$模型,
 
         [Parameter()]
-        [ValidateSet('1024x1024', '1536x1024', '1024x1536', 'auto')]
         [string]$尺寸 = 'auto',
 
         [Parameter()]
@@ -80,13 +79,10 @@
     $凭据 = Resolve-配置凭据 -参数密钥 $密钥 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
 
-    # 参考图
-    $参考图路径列表 = @()
+    # 参考图（支持本地路径和 URL）
+    $参考图数据列表 = @()
     if ($参考图) {
-        foreach ($单张 in $参考图) {
-            if (-not (Test-Path -LiteralPath $单张 -PathType Leaf)) { throw "参考图不存在：$单张" }
-            $参考图路径列表 += $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($单张)
-        }
+        foreach ($单张 in $参考图) { $参考图数据列表 += Get-图像数据 -来源 $单张 }
     }
 
     # 背景
@@ -94,16 +90,15 @@
         throw "背景取值无效：$背景。有效值：opaque、transparent、auto"
     }
 
-    # 蒙版
-    $蒙版路径 = $null
+    # 蒙版（支持本地路径和 URL）
+    $蒙版数据 = $null
     if ($蒙版) {
-        if (-not (Test-Path -LiteralPath $蒙版 -PathType Leaf)) { throw "蒙版文件不存在：$蒙版" }
-        if ($参考图路径列表.Count -eq 0) { throw "蒙版仅在指定 -参考图 时有效。" }
-        $蒙版路径 = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($蒙版)
+        if ($参考图数据列表.Count -eq 0) { throw "蒙版仅在指定 -参考图 时有效。" }
+        $蒙版数据 = Get-图像数据 -来源 $蒙版
     }
 
     # 构造请求
-    if ($参考图路径列表.Count -gt 0) {
+    if ($参考图数据列表.Count -gt 0) {
         Add-Type -AssemblyName System.Net.Http
         $端点 = "$($凭据.基础地址.TrimEnd('/'))/images/edits"
         $表单 = [System.Net.Http.MultipartFormDataContent]::new()
@@ -114,16 +109,16 @@
         if ($尺寸 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($尺寸), 'size') }
         if ($质量 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($质量), 'quality') }
         if ($背景) { $表单.Add([System.Net.Http.StringContent]::new($背景), 'background') }
-        if ($蒙版路径) {
-            $mc = [System.Net.Http.ByteArrayContent]::new([System.IO.File]::ReadAllBytes($蒙版路径))
+        if ($蒙版数据) {
+            $mc = [System.Net.Http.ByteArrayContent]::new($蒙版数据.字节)
             $mc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-            $表单.Add($mc, 'mask', [System.IO.Path]::GetFileName($蒙版路径))
+            $表单.Add($mc, 'mask', $蒙版数据.文件名)
         }
-        $字段名 = $(if ($参考图路径列表.Count -gt 1) { 'image[]' } else { 'image' })
-        foreach ($p in $参考图路径列表) {
-            $ic = [System.Net.Http.ByteArrayContent]::new([System.IO.File]::ReadAllBytes($p))
+        $字段名 = $(if ($参考图数据列表.Count -gt 1) { 'image[]' } else { 'image' })
+        foreach ($d in $参考图数据列表) {
+            $ic = [System.Net.Http.ByteArrayContent]::new($d.字节)
             $ic.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-            $表单.Add($ic, $字段名, [System.IO.Path]::GetFileName($p))
+            $表单.Add($ic, $字段名, $d.文件名)
         }
 
         Write-Host "正在调用 $($凭据.模型) 生成图像 ..." -ForegroundColor Cyan
