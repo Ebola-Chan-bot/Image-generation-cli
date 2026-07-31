@@ -10,7 +10,9 @@
     .PARAMETER 提示文件
         提示词文本文件路径。与 -提示词 二选一。
     .PARAMETER 密钥
-        API 令牌。未指定时查找已记住的值。
+        交互式输入密钥开关。指定此开关时会提示输入。
+    .PARAMETER 密钥值
+        API 令牌明文。未指定时查找已记住的值。
     .PARAMETER 基础地址
         Base URL。未指定时查找已记住的值。
     .PARAMETER 模型
@@ -38,7 +40,10 @@
         [ValidateNotNullOrEmpty()]
         [string]$提示文件,
 
-        [Parameter()][string]$密钥,
+        [Parameter()]
+        [switch]$密钥,
+
+        [Parameter()][string]$密钥值,
         [Parameter()][string]$基础地址,
         [Parameter()][string]$模型,
 
@@ -63,8 +68,12 @@
     }
 
     # 凭据
+    if ($密钥.IsPresent -and -not $密钥值) {
+        $安全密钥 = Read-Host -Prompt '请输入 API 密钥' -AsSecureString
+        $密钥值 = [System.Net.NetworkCredential]::new([string]::Empty, $安全密钥).Password
+    }
     $记住的配置 = Import-记住的配置 -配置路径 $配置路径
-    $凭据 = Resolve-配置凭据 -参数密钥 $密钥 -参数基础地址 $基础地址 -参数模型 $模型 `
+    $凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
 
     # 参考图（支持本地路径和 URL）
@@ -132,6 +141,9 @@
     catch {
         $错误详情 = $_.ErrorDetails.Message
         if (-not $错误详情) { $错误详情 = $_.Exception.Message }
+        if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication|API_KEY_INVALID)') {
+            throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
+        }
         throw "API 请求失败：$错误详情"
     }
 

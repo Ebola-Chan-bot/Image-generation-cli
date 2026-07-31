@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'AI图像生成.psm1'
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.1.0'
     GUID              = 'd47a8e3b-9f1c-4a62-b8e5-7c3d0f2a1e69'
     Author            = '埃博拉酱'
     CompanyName       = ''
@@ -19,7 +19,7 @@
             Tags         = @('AI', 'Image', 'GPT', 'Gemini', '图像生成', '中文')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ProjectUri   = 'https://github.com/Ebola-Chan-bot/Image-generation-cli'
-            ReleaseNotes = '初始版本：支持 GPT-Image-2 与 Gemini 图像模型。'
+            ReleaseNotes = '支持 -密钥/-密钥值 两种语法，以区分命令行/交互式指定密钥'
         }
     }
 }

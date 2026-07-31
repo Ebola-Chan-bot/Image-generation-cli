@@ -11,7 +11,9 @@
     .PARAMETER 提示文件
         提示词文本文件路径。与 -提示词 二选一。
     .PARAMETER 密钥
-        API 令牌。未指定时查找已记住的值。
+        交互式输入密钥开关。指定此开关时会提示输入。
+    .PARAMETER 密钥值
+        API 令牌明文。未指定时查找已记住的值。
     .PARAMETER 基础地址
         Base URL。未指定时查找已记住的值。
     .PARAMETER 模型
@@ -43,7 +45,10 @@
         [ValidateNotNullOrEmpty()]
         [string]$提示文件,
 
-        [Parameter()][string]$密钥,
+        [Parameter()]
+        [switch]$密钥,
+
+        [Parameter()][string]$密钥值,
         [Parameter()][string]$基础地址,
         [Parameter()][string]$模型,
 
@@ -75,9 +80,30 @@
     }
 
     # 凭据
+    if ($密钥.IsPresent -and -not $密钥值) {
+        $安全密钥 = Read-Host -Prompt '请输入 API 密钥' -AsSecureString
+        $密钥值 = [System.Net.NetworkCredential]::new([string]::Empty, $安全密钥).Password
+    }
     $记住的配置 = Import-记住的配置 -配置路径 $配置路径
-    $凭据 = Resolve-配置凭据 -参数密钥 $密钥 -参数基础地址 $基础地址 -参数模型 $模型 `
+    $凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
+
+    # 基础地址自动补全 /v1
+    if ($凭据.基础地址 -notmatch '/v\d+/?$') {
+        $凭据.基础地址 = $凭据.基础地址.TrimEnd('/') + '/v1'
+    }
+
+    # 尺寸本地校验
+    if ($尺寸 -ne 'auto') {
+        if ($尺寸 -notmatch '^(\d+)x(\d+)$') { throw "尺寸格式无效：$尺寸。应为 WxH（如 1024x1024）" }
+        $宽 = [int]$Matches[1]; $高 = [int]$Matches[2]
+        $长边 = [Math]::Max($宽, $高); $短边 = [Math]::Min($宽, $高)
+        $总像素 = $宽 * $高
+        if ($宽 % 16 -ne 0 -or $高 % 16 -ne 0) { throw "尺寸无效：宽和高必须是 16 的倍数（当前 ${宽}x${高}）" }
+        if ($长边 -gt 3840) { throw "尺寸无效：最长边不能超过 3840（当前 $长边）" }
+        if ($长边 / $短边 -gt 3) { throw "尺寸无效：长宽比不能超过 3:1（当前 ${宽}:${高}）" }
+        if ($总像素 -lt 655360 -or $总像素 -gt 8294400) { throw "尺寸无效：总像素需在 655360~8294400 之间（当前 $总像素）" }
+    }
 
     # 参考图（支持本地路径和 URL）
     $参考图数据列表 = @()
@@ -157,6 +183,9 @@
         catch {
             $错误详情 = $_.ErrorDetails.Message
             if (-not $错误详情) { $错误详情 = $_.Exception.Message }
+            if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
+                throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
+            }
             throw "API 请求失败：$错误详情"
         }
     }
@@ -171,21 +200,26 @@
     }
 
     # 解析响应
-    if (-not $响应.data -or $响应.data.Count -eq 0) {
+    $数据属性 = $响应.PSObject.Properties['data']
+    if (-not $数据属性 -or -not $数据属性.Value -or $数据属性.Value.Count -eq 0) {
         throw "API 未返回图像数据：$($响应 | ConvertTo-Json -Depth 10 -Compress)"
     }
-    $图像 = $响应.data[0]
+    $图像 = $数据属性.Value[0]
     $改写 = $图像.PSObject.Properties['revised_prompt']
     if ($改写 -and $改写.Value) { Write-Host "改写后的提示词: $($改写.Value)" -ForegroundColor DarkGray }
 
     $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
-    if ($图像.b64_json) {
-        [System.IO.File]::WriteAllBytes($解析后输出, [Convert]::FromBase64String($图像.b64_json))
+    $b64属性 = $图像.PSObject.Properties['b64_json']
+    if ($b64属性 -and $b64属性.Value) {
+        [System.IO.File]::WriteAllBytes($解析后输出, [Convert]::FromBase64String($b64属性.Value))
     }
-    elseif ($图像.url) {
-        Invoke-WebRequest -Uri $图像.url -OutFile $解析后输出 -TimeoutSec $超时秒数
+    else {
+        $url属性 = $图像.PSObject.Properties['url']
+        if ($url属性 -and $url属性.Value) {
+            Invoke-WebRequest -Uri $url属性.Value -OutFile $解析后输出 -TimeoutSec $超时秒数
+        }
+        else { throw "响应中既没有 b64_json 也没有 url：$($图像 | ConvertTo-Json -Depth 5 -Compress)" }
     }
-    else { throw "响应中既没有 b64_json 也没有 url。" }
 
     Write-Host "图像已保存: $解析后输出" -ForegroundColor Green
     return $解析后输出
