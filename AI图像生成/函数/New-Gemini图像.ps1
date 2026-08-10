@@ -15,18 +15,22 @@
         API 令牌明文。未指定时查找已记住的值。
     .PARAMETER 基础地址
         Base URL。未指定时查找已记住的值。
+        若不以版本号结尾（如官方 https://generativelanguage.googleapis.com/v1beta、
+        new-api 网关的 /v1beta），自动补全 /v1beta；自定义前缀请完整指定。
     .PARAMETER 模型
         模型名。未指定时查找已记住的值。
     .PARAMETER 输出路径
         输出文件路径。默认时间戳 PNG。
     .PARAMETER 超时秒数
-        超时时间，默认 300。
+        超时时间，默认 500。
     .PARAMETER 参考图
         参考图像路径（可多张）。
     .PARAMETER 宽高比
-        1:1 | 16:9 | 9:16 等。默认不指定。
+        官方支持 10 种：1:1 | 16:9 | 9:16 | 4:3 | 3:4 | 3:2 | 2:3 | 5:4 | 4:5 | 21:9。
+        默认不指定（由模型按参考图或默认选择）。
     .PARAMETER 分辨率
-        1K | 2K | 4K。默认不指定。
+        1K | 2K | 4K。默认不指定。注意：4K 仅 Pro 图像模型（gemini-3-pro-image / Nano Banana Pro）
+        支持，Flash 系最高 2K，传 4K 会被拒绝。
     .EXAMPLE
         New-Gemini图像 -提示词 "水彩柴犬" -密钥 'sk-xxx' -基础地址 'https://ssvip.dmxapi.com/v1' -模型 'gemini-3.1-flash-image-preview'
     #>
@@ -50,7 +54,7 @@
         [Parameter()]
         [string]$输出路径 = ".\gemini_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
-        [Parameter()][int]$超时秒数 = 300,
+        [Parameter()][int]$超时秒数 = 500,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -75,6 +79,11 @@
     $记住的配置 = Import-记住的配置 -配置路径 $配置路径
     $凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
+
+    # 基础地址自动补全 /v1beta（Gemini API 约定版本前缀，已带 v1/v1beta 等版本号的不再补）
+    if ($凭据.基础地址 -notmatch '/v\d+(beta|alpha)?/?$') {
+        $凭据.基础地址 = $凭据.基础地址.TrimEnd('/') + '/v1beta'
+    }
 
     # 参考图（支持本地路径和 URL）
     $参考图数据列表 = @()
@@ -144,9 +153,6 @@
         if ($错误详对象 -and $错误详对象.PSObject.Properties['Message'] -and $错误详对象.Message) {
             $错误详情 = $错误详对象.Message
         }
-        if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication|API_KEY_INVALID)') {
-            throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
-        }
         throw "API 请求失败：$错误详情"
     }
 
@@ -160,10 +166,12 @@
     }
 
     # 解析响应
-    if (-not $响应.candidates -or $响应.candidates.Count -eq 0) {
-        throw "API 未返回候选内容。"
+    $candidates属性 = $响应.PSObject.Properties['candidates']
+    if (-not $candidates属性 -or -not $candidates属性.Value -or @($candidates属性.Value).Count -eq 0) {
+        $响应预览 = $(try { $响应 | ConvertTo-Json -Depth 6 -Compress } catch { (Out-String -InputObject $响应) })
+        throw "API 未返回候选内容（响应中没有 candidates）。响应预览：$响应预览"
     }
-    $候选 = $响应.candidates[0]
+    $候选 = @($candidates属性.Value)[0]
 
     # 安全拦截检查
     $结束原因属性 = $候选.PSObject.Properties['finishReason']

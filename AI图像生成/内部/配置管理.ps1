@@ -39,15 +39,16 @@ function Resolve-配置凭据 {
         [string]$配置路径
     )
 
-    # 密钥
+    # 密钥（注意：属性可能不存在，必须用 PSObject.Properties 防护，否则严格模式抛异常）
     $密钥来源 = $null
     $安全密钥对象 = $null
+    $已记住密钥 = if ($记住的配置 -and $记住的配置.PSObject.Properties['密钥']) { $记住的配置.密钥 } else { $null }
     if (-not [string]::IsNullOrWhiteSpace($参数密钥)) {
         $安全密钥对象 = ConvertTo-SecureString -String $参数密钥 -AsPlainText -Force
         $密钥来源 = '参数'
     }
-    elseif ($记住的配置 -and $记住的配置.密钥) {
-        $安全密钥对象 = $记住的配置.密钥
+    elseif ($已记住密钥) {
+        $安全密钥对象 = $已记住密钥
         $密钥来源 = '已记住'
     }
     else {
@@ -58,13 +59,14 @@ function Resolve-配置凭据 {
     }
     $密钥明文 = [System.Net.NetworkCredential]::new([string]::Empty, $安全密钥对象).Password
 
-    # 基础地址
+    # 基础地址（同样防护属性不存在）
     $基础地址来源 = $null
+    $已记住基础地址 = if ($记住的配置 -and $记住的配置.PSObject.Properties['基础地址']) { $记住的配置.基础地址 } else { $null }
     if (-not [string]::IsNullOrWhiteSpace($参数基础地址)) {
         $基础地址来源 = '参数'
     }
-    elseif ($记住的配置 -and -not [string]::IsNullOrWhiteSpace($记住的配置.基础地址)) {
-        $参数基础地址 = $记住的配置.基础地址
+    elseif (-not [string]::IsNullOrWhiteSpace($已记住基础地址)) {
+        $参数基础地址 = $已记住基础地址
         $基础地址来源 = '已记住'
     }
     else {

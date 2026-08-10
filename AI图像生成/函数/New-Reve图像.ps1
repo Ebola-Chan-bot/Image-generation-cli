@@ -39,7 +39,8 @@ function New-Reve图像 {
     .PARAMETER 输出路径
         输出文件路径。默认时间戳 PNG。扩展名决定 output_format（.jpg/.jpeg → jpeg，.webp → webp，其余 png）；-去背景 时强制 png。
     .PARAMETER 超时秒数
-        提交与轮询的总超时，默认 300。
+        单次 HTTP 请求的超时秒数（提交与轮询各自独立计时），默认 500。
+        注意：轮询与下载为无限重试，不设总时长上限；此参数仅约束单个请求。
     .PARAMETER 轮询间隔秒数
         轮询 prediction 接口的间隔，默认 3。
     .EXAMPLE
@@ -80,7 +81,7 @@ function New-Reve图像 {
         [Parameter()]
         [string]$输出路径 = ".\reve_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
-        [Parameter()][int]$超时秒数 = 300,
+        [Parameter()][int]$超时秒数 = 500,
 
         [Parameter()][ValidateRange(1, 30)]
         [int]$轮询间隔秒数 = 3
@@ -128,41 +129,8 @@ function New-Reve图像 {
     $凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
         -记住的配置 $记住的配置 -配置路径 $配置路径
 
-    # 宽高比
-    $有效宽高比 = @('auto', '4:1', '3:1', '21:9', '2:1', '17:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16', '1:2', '1:3', '1:4')
-    if ($宽高比 -and $宽高比 -notin $有效宽高比) {
-        throw "宽高比无效：$宽高比。有效值：$($有效宽高比 -join '、')"
-    }
-
     # 参考图：URL 直接透传，本地文件转 base64（单张 ≤40MB，总计 ≤100MB）
     $图像值列表 = [System.Collections.Generic.List[string]]::new()
-    if ($参考图) {
-        if ($参考图.Count -gt 6) { throw "参考图最多 6 张，当前 $($参考图.Count) 张。" }
-        $总数据量 = [long]0
-        foreach ($单张 in $参考图) {
-            if ($单张 -match '^https?://') {
-                $图像值列表.Add($单张)
-            }
-            else {
-                $数据 = Get-图像数据 -来源 $单张
-                if ($数据.字节.Length -gt 41943040) { throw "参考图过大（上限 40MB）：$单张" }
-                $总数据量 += $数据.字节.Length
-                $图像值列表.Add([Convert]::ToBase64String($数据.字节))
-            }
-        }
-        if ($总数据量 -gt 104857600) { throw "参考图总大小超过 100MB 上限。" }
-    }
-
-    # 模型与参考图一致性检查
-    if ($凭据.模型 -like '*/remix' -and $图像值列表.Count -eq 0) {
-        throw "模型 $($凭据.模型) 是 Remix 变体，必须提供至少 1 张 -参考图。"
-    }
-    if ($凭据.模型 -like '*/edit' -and $图像值列表.Count -ne 1) {
-        throw "模型 $($凭据.模型) 是 Edit 变体，必须且只能提供 1 张 -参考图（当前 $($图像值列表.Count)）。如需多张参考图请指定 -模型 'reve-ai/reve-2.1/remix'。"
-    }
-    if ($凭据.模型 -like '*/text-to-image' -and $图像值列表.Count -gt 0) {
-        throw "模型 $($凭据.模型) 是纯文生图变体，不支持参考图。如需编辑请指定 -模型 'reve-ai/reve-2.1/edit'。"
-    }
 
     # 输出格式由扩展名决定；-去背景 需要透明通道，强制 png
     $输出扩展名 = [System.IO.Path]::GetExtension($输出路径).ToLowerInvariant()
@@ -184,13 +152,16 @@ function New-Reve图像 {
     $提交端点 = "$api基础/model/generateImage"
 
     # 请求体（Atlas Cloud 统一图像协议）
+    # 不启用 enable_sync_mode：同步等待会让同一连接挂起数十秒等出图，期间易被网络切断；
+    # 异步提交立即返回任务 ID，下方轮询循环负责等到出图。
+    # enable_base64_output=false（URL 模式）：成果以 CDN URL 持久化，下载中断后只需
+    # 重新下载同一 URL，不必重新生成（重新生成会再次计费）。
     $请求体对象 = [ordered]@{
         model                = $凭据.模型
         prompt               = $提示词
         aspect_ratio         = $宽高比
         output_format        = $输出格式
-        enable_base64_output = $true
-        enable_sync_mode     = $true
+        enable_base64_output = $false
     }
     if ($图像值列表.Count -gt 0) {
         if ($凭据.模型 -like '*/edit') {
@@ -205,25 +176,36 @@ function New-Reve图像 {
     if ($去背景.IsPresent) { $请求体对象['remove_background'] = $true }
 
     $请求体 = $请求体对象 | ConvertTo-Json -Depth 10
-    $请求头 = @{ 'Authorization' = "Bearer $($凭据.密钥明文)"; 'Content-Type' = 'application/json' }
 
     Write-Host "正在调用 $($凭据.模型) 生成图像（原生 4K，通常需要数十秒）..." -ForegroundColor Cyan
 
+    # 用 HttpClient 提交：参考图 base64 后请求体可达数十 MB，
+    # Invoke-RestMethod（HttpWebRequest）默认的 Expect 100-continue 在大体积上传时易被服务端断开
+    Add-Type -AssemblyName System.Net.Http
+    $客户端 = [System.Net.Http.HttpClient]::new()
+    $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
+    $客户端.DefaultRequestHeaders.Authorization =
+        [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
+    $内容 = [System.Net.Http.StringContent]::new($请求体, [System.Text.Encoding]::UTF8, 'application/json')
     try {
-        $响应 = Invoke-RestMethod -Uri $提交端点 -Method Post -Headers $请求头 `
-            -Body ([System.Text.Encoding]::UTF8.GetBytes($请求体)) -TimeoutSec $超时秒数
-    }
-    catch {
-        $错误详情 = $_.Exception.Message
-        $错误详对象 = $_.ErrorDetails
-        if ($错误详对象 -and $错误详对象.PSObject.Properties['Message'] -and $错误详对象.Message) {
-            $错误详情 = $错误详对象.Message
+        $响应消息 = $客户端.PostAsync($提交端点, $内容).GetAwaiter().GetResult()
+        $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        if (-not $响应消息.IsSuccessStatusCode) {
+            $状态码 = [int]$响应消息.StatusCode
+            if ($响应文本 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
+                throw [System.Management.Automation.RuntimeException]"密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误（HTTP $状态码）：$响应文本"
+            }
+            throw [System.Management.Automation.RuntimeException]"HTTP $状态码：$响应文本"
         }
-        if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication|401)') {
-            throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
-        }
-        throw "API 请求失败：$错误详情"
+        $响应 = $响应文本 | ConvertFrom-Json
     }
+    catch [System.Management.Automation.MethodInvocationException] {
+        $详情 = Get-NetException详情 -Exception $_.Exception
+        throw [System.Management.Automation.RuntimeException]("API 请求失败：$详情")
+    }
+    catch [System.Management.Automation.RuntimeException] { throw }
+    catch { throw "API 请求失败：$($_.Exception.Message)" }
+    finally { $内容.Dispose(); $客户端.Dispose() }
 
     # 记住凭据
     if ($凭据.密钥来源 -ne '已记住' -or $凭据.基础地址来源 -ne '已记住' -or $凭据.模型来源 -ne '已记住') {
@@ -262,19 +244,17 @@ function New-Reve图像 {
     $输出属性 = $数据.PSObject.Properties['outputs']
     if ($输出属性 -and $输出属性.Value) { $输出列表 = @($输出属性.Value) }
 
-    # 同步模式未完成时自动轮询
+    # 异步提交后轮询等待出图。轮询是短请求，网络抖动导致的单次失败无限重试；
+    # 不设总时长上限（-超时秒数 仅作用于单次请求），直到服务端给出终态。
     $轮询端点 = "$api基础/model/prediction/$任务ID"
-    $计时器 = [System.Diagnostics.Stopwatch]::StartNew()
     while ($状态 -notin @('completed', 'succeeded', 'failed', 'timeout')) {
-        if ($计时器.Elapsed.TotalSeconds -gt $超时秒数) {
-            throw "生成超时（$超时秒数 秒）。任务 ID：$任务ID，可稍后用 GET $轮询端点 继续查询。"
-        }
         Start-Sleep -Seconds $轮询间隔秒数
         try {
             $查询 = Invoke-RestMethod -Uri $轮询端点 -Headers @{ 'Authorization' = "Bearer $($凭据.密钥明文)" } -TimeoutSec 30
         }
         catch {
-            throw "轮询任务状态失败：$($_.Exception.Message)"
+            Write-Warning "轮询失败，稍后重试：$($_.Exception.Message)"
+            continue
         }
         $查询data属性 = $查询.PSObject.Properties['data']
         if (-not $查询data属性 -or -not $查询data属性.Value) { continue }
@@ -309,18 +289,33 @@ function New-Reve图像 {
         Write-Host "远端耗时: $([math]::Round($耗时属性.Value / 1000, 1)) 秒" -ForegroundColor DarkGray
     }
 
-    # 保存输出。已实测确认（enable_base64_output=true）：outputs[0] 为
-    # "data:image/png;base64,<base64>" 形式的字符串（见 测试\探测-AtlasCloud输出格式.ps1）
+    # 保存输出。URL 模式（enable_base64_output=false）下 outputs[0] 为 CDN URL，
+    # 下载失败时带退避无限重试（成果已在远端持久化，重试不重新生成、不额外计费）。
     $输出内容 = "$($输出列表[0])".Trim()
 
     $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
     if ($输出内容 -match '^data:image/[a-zA-Z0-9.+-]+;base64,') {
+        # 兼容：base64 data URI（旧模式或个别中转站行为）
         $b64部分 = $输出内容.Substring($输出内容.IndexOf(',') + 1)
         [System.IO.File]::WriteAllBytes($解析后输出, [Convert]::FromBase64String($b64部分))
     }
+    elseif ($输出内容 -match '^https?://') {
+        $下载尝试 = 0
+        while ($true) {
+            $下载尝试++
+            try {
+                Invoke-WebRequest -Uri $输出内容 -OutFile $解析后输出 -TimeoutSec $超时秒数
+                break
+            }
+            catch {
+                Write-Warning "下载失败（第 $下载尝试 次），稍后重试：$($_.Exception.Message)"
+                Start-Sleep -Seconds ([Math]::Min($下载尝试, 30))
+            }
+        }
+    }
     else {
         $预览长度 = [Math]::Min(300, $输出内容.Length)
-        throw "输出内容不是预期的 data:image/*;base64 格式，无法保存。前 $预览长度 字符预览：`n$($输出内容.Substring(0, $预览长度))"
+        throw "输出内容既不是 URL 也不是 data URI，无法保存。前 $预览长度 字符预览：`n$($输出内容.Substring(0, $预览长度))"
     }
     Write-Host "图像已保存: $解析后输出" -ForegroundColor Green
     return $解析后输出

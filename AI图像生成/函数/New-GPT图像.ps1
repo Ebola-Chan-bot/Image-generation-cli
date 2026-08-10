@@ -25,11 +25,14 @@
     .PARAMETER 输出路径
         输出文件路径。默认时间戳 PNG。
     .PARAMETER 超时秒数
-        超时时间，默认 300。
+        超时时间，默认 500。
     .PARAMETER 参考图
-        参考图像路径（可多张）。
+        参考图像路径或 URL（可多张）。官方限制（OpenAI images/edits，本函数不做本地拦截）：
+        GPT 图像模型最多 16 张，每张为小于 50MB 的 png / webp / jpg；dall-e-2 仅支持单张 ≤4MB 方形 png。
+        同时指定 -蒙版 时，蒙版仅应用于第一张参考图。
     .PARAMETER 蒙版
-        蒙版（mask）图像路径，用于对参考图做局部重绘（inpainting），仅在有参考图时生效。
+        蒙版（mask）图像路径，用于对参考图做局部重绘（inpainting），仅在有参考图时生效；
+        提供多张参考图时，蒙版仅应用于第一张。
         语义：透明（alpha=0）区域 = 要重绘的地方；不透明区域 = 保持原样不动。
         要求：1) 必须是 PNG；2) 宽高与参考图像素级一致（不会自动缩放对齐）；3) RGBA 带 alpha 通道。
         提示词只描述透明区域中想要的内容，其余部分模型严格保留参考图原样。
@@ -65,7 +68,7 @@
         [Parameter()]
         [string]$输出路径 = ".\gpt-image-2_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
-        [Parameter()][int]$超时秒数 = 300,
+        [Parameter()][int]$超时秒数 = 500,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -95,18 +98,6 @@
         $凭据.基础地址 = $凭据.基础地址.TrimEnd('/') + '/v1'
     }
 
-    # 尺寸本地校验
-    if ($尺寸 -ne 'auto') {
-        if ($尺寸 -notmatch '^(\d+)x(\d+)$') { throw "尺寸格式无效：$尺寸。应为 WxH（如 1024x1024）" }
-        $宽 = [int]$Matches[1]; $高 = [int]$Matches[2]
-        $长边 = [Math]::Max($宽, $高); $短边 = [Math]::Min($宽, $高)
-        $总像素 = $宽 * $高
-        if ($宽 % 16 -ne 0 -or $高 % 16 -ne 0) { throw "尺寸无效：宽和高必须是 16 的倍数（当前 ${宽}x${高}）" }
-        if ($长边 -gt 3840) { throw "尺寸无效：最长边不能超过 3840（当前 $长边）" }
-        if ($长边 / $短边 -gt 3) { throw "尺寸无效：长宽比不能超过 3:1（当前 ${宽}:${高}）" }
-        if ($总像素 -lt 655360 -or $总像素 -gt 8294400) { throw "尺寸无效：总像素需在 655360~8294400 之间（当前 $总像素）" }
-    }
-
     # 参考图（支持本地路径和 URL）
     $参考图数据列表 = @()
     if ($参考图) {
@@ -116,7 +107,6 @@
     # 蒙版（支持本地路径和 URL）
     $蒙版数据 = $null
     if ($蒙版) {
-        if ($参考图数据列表.Count -eq 0) { throw "蒙版仅在指定 -参考图 时有效。" }
         $蒙版数据 = Get-图像数据 -来源 $蒙版
     }
 
@@ -124,50 +114,83 @@
     if ($参考图数据列表.Count -gt 0) {
         Add-Type -AssemblyName System.Net.Http
         $端点 = "$($凭据.基础地址.TrimEnd('/'))/images/edits"
-        $表单 = [System.Net.Http.MultipartFormDataContent]::new()
-        $表单.Add([System.Net.Http.StringContent]::new($凭据.模型), 'model')
-        $表单.Add([System.Net.Http.StringContent]::new($提示词), 'prompt')
-        $表单.Add([System.Net.Http.StringContent]::new('1'), 'n')
-        $表单.Add([System.Net.Http.StringContent]::new('low'), 'moderation')
-        if ($尺寸 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($尺寸), 'size') }
-        if ($质量 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($质量), 'quality') }
-        if ($蒙版数据) {
-            $mc = [System.Net.Http.ByteArrayContent]::new($蒙版数据.字节)
-            $mc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-            $表单.Add($mc, 'mask', $蒙版数据.文件名)
-        }
-        $字段名 = $(if ($参考图数据列表.Count -gt 1) { 'image[]' } else { 'image' })
-        foreach ($d in $参考图数据列表) {
-            $ic = [System.Net.Http.ByteArrayContent]::new($d.字节)
-            $ic.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-            $表单.Add($ic, $字段名, $d.文件名)
-        }
 
         Write-Host "正在调用 $($凭据.模型) 生成图像 ..." -ForegroundColor Cyan
-        $客户端 = [System.Net.Http.HttpClient]::new()
-        $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
-        $客户端.DefaultRequestHeaders.Authorization =
-            [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
-        try {
-            $响应消息 = $客户端.PostAsync($端点, $表单).GetAwaiter().GetResult()
-            $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            if (-not $响应消息.IsSuccessStatusCode) {
-                $状态码 = [int]$响应消息.StatusCode
-                if ($响应文本 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
-                    throw "密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误（HTTP $状态码）：$响应文本"
-                }
-                throw "HTTP $状态码：$响应文本"
+
+        # 连接中断自动重试（最多 3 次）：大尺寸/高质量多参考图生成耗时长，
+        # 客户端默认 300 秒超时或中转链路易在等待期间断开连接（"A task was canceled"
+        # 且无响应体）。重试前指数退避；成功响应或明确的 HTTP 错误不重试。
+        # 每次调用生成一个幂等键贯穿所有尝试：OpenAI 兼容 API 收到相同 Idempotency-Key
+        # 时会复用首次结果而非重新生成，避免重试导致重复计费。
+        $幂等键 = [guid]::NewGuid().ToString()
+        $最大重试 = 3
+        $表单 = $null
+        $客户端 = $null
+        $响应 = $null
+        for ($尝试 = 1; $尝试 -le $最大重试; $尝试++) {
+            if ($尝试 -gt 1) {
+                $等待秒数 = $尝试
+                Write-Host "连接中断，正在等待 $等待秒数 秒后重试（$尝试/$最大重试）..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $等待秒数
+                $表单.Dispose()
+                $客户端.Dispose()
             }
-            $响应 = $响应文本 | ConvertFrom-Json
+            $表单 = [System.Net.Http.MultipartFormDataContent]::new()
+            $表单.Add([System.Net.Http.StringContent]::new($凭据.模型), 'model')
+            $表单.Add([System.Net.Http.StringContent]::new($提示词), 'prompt')
+            $表单.Add([System.Net.Http.StringContent]::new('1'), 'n')
+            $表单.Add([System.Net.Http.StringContent]::new('low'), 'moderation')
+            if ($尺寸 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($尺寸), 'size') }
+            if ($质量 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($质量), 'quality') }
+            if ($蒙版数据) {
+                $mc = [System.Net.Http.ByteArrayContent]::new($蒙版数据.字节)
+                $mc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
+                $表单.Add($mc, 'mask', $蒙版数据.文件名)
+            }
+            $字段名 = $(if ($参考图数据列表.Count -gt 1) { 'image[]' } else { 'image' })
+            foreach ($d in $参考图数据列表) {
+                $ic = [System.Net.Http.ByteArrayContent]::new($d.字节)
+                $ic.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
+                $表单.Add($ic, $字段名, $d.文件名)
+            }
+            $客户端 = [System.Net.Http.HttpClient]::new()
+            $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
+            $客户端.DefaultRequestHeaders.Authorization =
+                [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
+            # 幂等键：让上游把本次调用的多次重试视为同一请求，防止重复计费
+            if ($客户端.DefaultRequestHeaders.Contains('Idempotency-Key')) {
+                $客户端.DefaultRequestHeaders.Remove('Idempotency-Key')
+            }
+            $客户端.DefaultRequestHeaders.Add('Idempotency-Key', $幂等键)
+            try {
+                $响应消息 = $客户端.PostAsync($端点, $表单).GetAwaiter().GetResult()
+                $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if (-not $响应消息.IsSuccessStatusCode) {
+                    $状态码 = [int]$响应消息.StatusCode
+                    throw "HTTP $状态码：$响应文本"
+                }
+                $响应 = $响应文本 | ConvertFrom-Json
+                break  # 成功，跳出重试循环
+            }
+            catch [System.Management.Automation.MethodInvocationException] {
+                # 服务端报错并关闭连接时，HttpClient 常抛 TaskCanceledException（"A task was canceled"），
+                # 真实的 HTTP 错误藏在内部 WebException 中——逐层展开提取，而不是只报最外层消息
+                $详情 = Get-NetException详情 -Exception $_.Exception
+                # 有服务端响应体（形如 "HTTP 4xx: {...}" 或含 error JSON）视为明确错误，直接抛出
+                if ($详情 -match '^HTTP \d{3}[：:]' -or $详情 -match '"error"|"code"') {
+                    throw "API 请求失败：$详情"
+                }
+                # 纯粹的传输层中断：无响应体，判定为可重试
+                if ($尝试 -lt $最大重试) {
+                    Write-Warning "连接被中断（无服务端响应，可能是生成超时或网络抖动）：$详情"
+                    continue
+                }
+                throw "API 请求失败（已重试 $最大重试 次）：$详情"
+            }
+            catch { throw "API 请求失败：$($_.Exception.Message)" }
         }
-        catch [System.Management.Automation.MethodInvocationException] {
-            # 服务端报错并关闭连接时，HttpClient 常抛 TaskCanceledException（"A task was canceled"），
-            # 真实的 HTTP 错误藏在内部 WebException 中——逐层展开提取，而不是只报最外层消息
-            $详情 = Get-NetException详情 -Exception $_.Exception
-            throw "API 请求失败：$详情"
-        }
-        catch { throw "API 请求失败：$($_.Exception.Message)" }
-        finally { $表单.Dispose(); $客户端.Dispose() }
+        if ($表单) { $表单.Dispose() }
+        if ($客户端) { $客户端.Dispose() }
     }
     else {
         $端点 = "$($凭据.基础地址.TrimEnd('/'))/images/generations"
@@ -187,9 +210,6 @@
             $错误详对象 = $_.ErrorDetails
             if ($错误详对象 -and $错误详对象.PSObject.Properties['Message'] -and $错误详对象.Message) {
                 $错误详情 = $错误详对象.Message
-            }
-            if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
-                throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
             }
             throw "API 请求失败：$错误详情"
         }
