@@ -6,20 +6,20 @@
     CompanyName       = ''
     Copyright         = '(c) 2026. All rights reserved.'
     Description       = @'
-通过 OpenAI 兼容接口（GPT-Image-2）与 Gemini generateContent 接口生成 AI 图像。
+通过 OpenAI 兼容接口（GPT-Image-2）、Gemini generateContent 接口与 Reve v2 接口生成 AI 图像。
 支持参考图编辑、DPAPI 凭据记忆、搜索增强。
 '@
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('New-GPT图像', 'New-Gemini图像')
+    FunctionsToExport = @('New-GPT图像', 'New-Gemini图像', 'New-Reve图像')
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()
     PrivateData       = @{
         PSData = @{
-            Tags         = @('AI', 'Image', 'GPT', 'Gemini', '图像生成', '中文')
+            Tags         = @('AI', 'Image', 'GPT', 'Gemini', 'Reve', '图像生成', '中文')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ProjectUri   = 'https://github.com/Ebola-Chan-bot/Image-generation-cli'
-            ReleaseNotes = '支持 -密钥/-密钥值 两种语法，以区分命令行/交互式指定密钥'
+            ReleaseNotes = '新增 New-Reve图像：通过 Reve v2 接口生成 4K 图像'
         }
     }
 }

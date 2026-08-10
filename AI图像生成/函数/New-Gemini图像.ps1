@@ -139,8 +139,11 @@
             -Body ([System.Text.Encoding]::UTF8.GetBytes($请求体)) -TimeoutSec $超时秒数
     }
     catch {
-        $错误详情 = $_.ErrorDetails.Message
-        if (-not $错误详情) { $错误详情 = $_.Exception.Message }
+        $错误详情 = $_.Exception.Message
+        $错误详对象 = $_.ErrorDetails
+        if ($错误详对象 -and $错误详对象.PSObject.Properties['Message'] -and $错误详对象.Message) {
+            $错误详情 = $错误详对象.Message
+        }
         if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication|API_KEY_INVALID)') {
             throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
         }

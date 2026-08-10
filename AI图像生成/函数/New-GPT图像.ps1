@@ -28,12 +28,19 @@
         超时时间，默认 300。
     .PARAMETER 参考图
         参考图像路径（可多张）。
-    .PARAMETER 背景
-        opaque | transparent | auto。默认不指定。
     .PARAMETER 蒙版
-        蒙版图像路径。仅在有参考图时生效。
+        蒙版（mask）图像路径，用于对参考图做局部重绘（inpainting），仅在有参考图时生效。
+        语义：透明（alpha=0）区域 = 要重绘的地方；不透明区域 = 保持原样不动。
+        要求：1) 必须是 PNG；2) 宽高与参考图像素级一致（不会自动缩放对齐）；3) RGBA 带 alpha 通道。
+        制作方法（任选其一）：
+        a) 修图软件（Photoshop/GIMP/画图）：新建与参考图同尺寸的图层，把要重绘的区域
+           擦成透明（或反向：保留区涂满、重绘区留空），导出 PNG。
+        b) 脚本生成：用 System.Drawing 画一张同尺寸图片，重绘区填 Transparent 后存 PNG。
+        提示词只描述透明区域中想要的内容，其余部分模型严格保留参考图原样。
     .EXAMPLE
         New-GPT图像 -提示词 "水彩柴犬" -密钥 'sk-xxx' -基础地址 'https://open.cherryin.net/v1'
+    .EXAMPLE
+        New-GPT图像 -提示词 "这里改成一顶红色圣诞帽" -参考图 .\立绘.png -蒙版 .\mask.png
     #>
     [CmdletBinding(DefaultParameterSetName = '提示词')]
     param(
@@ -68,7 +75,6 @@
         [ValidateNotNullOrEmpty()]
         [string[]]$参考图,
 
-        [Parameter()][string]$背景 = '',
         [Parameter()][string]$蒙版 = ''
     )
 
@@ -111,11 +117,6 @@
         foreach ($单张 in $参考图) { $参考图数据列表 += Get-图像数据 -来源 $单张 }
     }
 
-    # 背景
-    if ($背景 -and $背景 -notin @('opaque', 'transparent', 'auto')) {
-        throw "背景取值无效：$背景。有效值：opaque、transparent、auto"
-    }
-
     # 蒙版（支持本地路径和 URL）
     $蒙版数据 = $null
     if ($蒙版) {
@@ -134,7 +135,6 @@
         $表单.Add([System.Net.Http.StringContent]::new('low'), 'moderation')
         if ($尺寸 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($尺寸), 'size') }
         if ($质量 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($质量), 'quality') }
-        if ($背景) { $表单.Add([System.Net.Http.StringContent]::new($背景), 'background') }
         if ($蒙版数据) {
             $mc = [System.Net.Http.ByteArrayContent]::new($蒙版数据.字节)
             $mc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
@@ -156,12 +156,19 @@
             $响应消息 = $客户端.PostAsync($端点, $表单).GetAwaiter().GetResult()
             $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
             if (-not $响应消息.IsSuccessStatusCode) {
-                throw "API 请求失败（HTTP $([int]$响应消息.StatusCode)）：$响应文本"
+                $状态码 = [int]$响应消息.StatusCode
+                if ($响应文本 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
+                    throw "密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误（HTTP $状态码）：$响应文本"
+                }
+                throw "HTTP $状态码：$响应文本"
             }
             $响应 = $响应文本 | ConvertFrom-Json
         }
         catch [System.Management.Automation.MethodInvocationException] {
-            throw "API 请求失败：$($_.Exception.InnerException.Message)"
+            # 服务端报错并关闭连接时，HttpClient 常抛 TaskCanceledException（"A task was canceled"），
+            # 真实的 HTTP 错误藏在内部 WebException 中——逐层展开提取，而不是只报最外层消息
+            $详情 = Get-NetException详情 -Exception $_.Exception
+            throw "API 请求失败：$详情"
         }
         catch { throw "API 请求失败：$($_.Exception.Message)" }
         finally { $表单.Dispose(); $客户端.Dispose() }
@@ -172,7 +179,6 @@
         $请求体 = @{ model = $凭据.模型; prompt = $提示词; n = 1; moderation = 'low' }
         if ($尺寸 -ne 'auto') { $请求体['size'] = $尺寸 }
         if ($质量 -ne 'auto') { $请求体['quality'] = $质量 }
-        if ($背景) { $请求体['background'] = $背景 }
         $请求体 = $请求体 | ConvertTo-Json -Depth 5
 
         Write-Host "正在调用 $($凭据.模型) 生成图像 ..." -ForegroundColor Cyan
@@ -181,8 +187,11 @@
                 -Body ([System.Text.Encoding]::UTF8.GetBytes($请求体)) -TimeoutSec $超时秒数
         }
         catch {
-            $错误详情 = $_.ErrorDetails.Message
-            if (-not $错误详情) { $错误详情 = $_.Exception.Message }
+            $错误详情 = $_.Exception.Message
+            $错误详对象 = $_.ErrorDetails
+            if ($错误详对象 -and $错误详对象.PSObject.Properties['Message'] -and $错误详对象.Message) {
+                $错误详情 = $错误详对象.Message
+            }
             if ($错误详情 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
                 throw "API 请求失败：密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误：$错误详情"
             }
