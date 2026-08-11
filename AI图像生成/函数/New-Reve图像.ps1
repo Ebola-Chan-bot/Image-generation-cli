@@ -131,6 +131,21 @@ function New-Reve图像 {
 
     # 参考图：URL 直接透传，本地文件转 base64（单张 ≤40MB，总计 ≤100MB）
     $图像值列表 = [System.Collections.Generic.List[string]]::new()
+    if ($参考图) {
+        $总数据量 = [long]0
+        foreach ($单张 in $参考图) {
+            if ($单张 -match '^https?://') {
+                $图像值列表.Add($单张)
+            }
+            else {
+                $数据 = Get-图像数据 -来源 $单张
+                if ($数据.字节.Length -gt 41943040) { throw "参考图过大（上限 40MB）：$单张" }
+                $总数据量 += $数据.字节.Length
+                $图像值列表.Add([Convert]::ToBase64String($数据.字节))
+            }
+        }
+        if ($总数据量 -gt 104857600) { throw "参考图总大小超过 100MB 上限。" }
+    }
 
     # 输出格式由扩展名决定；-去背景 需要透明通道，强制 png
     $输出扩展名 = [System.IO.Path]::GetExtension($输出路径).ToLowerInvariant()
@@ -180,32 +195,45 @@ function New-Reve图像 {
     Write-Host "正在调用 $($凭据.模型) 生成图像（原生 4K，通常需要数十秒）..." -ForegroundColor Cyan
 
     # 用 HttpClient 提交：参考图 base64 后请求体可达数十 MB，
-    # Invoke-RestMethod（HttpWebRequest）默认的 Expect 100-continue 在大体积上传时易被服务端断开
+    # Invoke-RestMethod（HttpWebRequest）默认的 Expect 100-continue 在大体积上传时易被服务端断开。
+    # 密钥验证失败（401/403）时不直接失败退出：立即交互式提示输入新密钥，然后重试提交。
     Add-Type -AssemblyName System.Net.Http
-    $客户端 = [System.Net.Http.HttpClient]::new()
-    $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
-    $客户端.DefaultRequestHeaders.Authorization =
-        [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
-    $内容 = [System.Net.Http.StringContent]::new($请求体, [System.Text.Encoding]::UTF8, 'application/json')
-    try {
-        $响应消息 = $客户端.PostAsync($提交端点, $内容).GetAwaiter().GetResult()
-        $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-        if (-not $响应消息.IsSuccessStatusCode) {
-            $状态码 = [int]$响应消息.StatusCode
-            if ($响应文本 -match '(Invalid token|Unauthorized|Invalid API key|Authentication)') {
-                throw [System.Management.Automation.RuntimeException]"密钥无效或已过期。请使用 -密钥值 '新密钥' 或 -密钥 交互式输入。`n原始错误（HTTP $状态码）：$响应文本"
+    while ($true) {
+        $客户端 = [System.Net.Http.HttpClient]::new()
+        $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
+        $客户端.DefaultRequestHeaders.Authorization =
+            [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
+        $内容 = [System.Net.Http.StringContent]::new($请求体, [System.Text.Encoding]::UTF8, 'application/json')
+        try {
+            $响应消息 = $客户端.PostAsync($提交端点, $内容).GetAwaiter().GetResult()
+            $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if (-not $响应消息.IsSuccessStatusCode) {
+                $状态码 = [int]$响应消息.StatusCode
+                if ($状态码 -eq 401) {
+                    Write-Warning "密钥验证失败（HTTP $状态码）：$响应文本"
+                    $新安全密钥 = Read-Host -Prompt '请重新输入正确的 API 密钥以立即重试（留空则取消）' -AsSecureString
+                    if ($新安全密钥.Length -eq 0) {
+                        throw [System.Management.Automation.RuntimeException]"未输入密钥，请求已取消。"
+                    }
+                    $凭据.安全密钥对象 = $新安全密钥
+                    $凭据.密钥明文 = [System.Net.NetworkCredential]::new([string]::Empty, $新安全密钥).Password
+                    $凭据.密钥来源 = '交互输入'
+                    Write-Host "使用新密钥重试提交 ..." -ForegroundColor Yellow
+                    continue
+                }
+                throw [System.Management.Automation.RuntimeException]"HTTP $状态码：$响应文本"
             }
-            throw [System.Management.Automation.RuntimeException]"HTTP $状态码：$响应文本"
+            $响应 = $响应文本 | ConvertFrom-Json
+            break
         }
-        $响应 = $响应文本 | ConvertFrom-Json
+        catch [System.Management.Automation.MethodInvocationException] {
+            $详情 = Get-NetException详情 -Exception $_.Exception
+            throw [System.Management.Automation.RuntimeException]("API 请求失败：$详情")
+        }
+        catch [System.Management.Automation.RuntimeException] { throw }
+        catch { throw "API 请求失败：$($_.Exception.Message)" }
+        finally { $内容.Dispose(); $客户端.Dispose() }
     }
-    catch [System.Management.Automation.MethodInvocationException] {
-        $详情 = Get-NetException详情 -Exception $_.Exception
-        throw [System.Management.Automation.RuntimeException]("API 请求失败：$详情")
-    }
-    catch [System.Management.Automation.RuntimeException] { throw }
-    catch { throw "API 请求失败：$($_.Exception.Message)" }
-    finally { $内容.Dispose(); $客户端.Dispose() }
 
     # 记住凭据
     if ($凭据.密钥来源 -ne '已记住' -or $凭据.基础地址来源 -ne '已记住' -or $凭据.模型来源 -ne '已记住') {
@@ -244,7 +272,9 @@ function New-Reve图像 {
     $输出属性 = $数据.PSObject.Properties['outputs']
     if ($输出属性 -and $输出属性.Value) { $输出列表 = @($输出属性.Value) }
 
-    # 异步提交后轮询等待出图。轮询是短请求，网络抖动导致的单次失败无限重试；
+    # 异步提交后轮询等待出图。区分两类轮询失败：
+    # - 网络抖动（连接中断、超时、5xx）：短请求，无限重试等待恢复；
+    # - 业务性失败（4xx：任务不存在、参数错误、权限问题等）：重试无意义，立即报错退出。
     # 不设总时长上限（-超时秒数 仅作用于单次请求），直到服务端给出终态。
     $轮询端点 = "$api基础/model/prediction/$任务ID"
     while ($状态 -notin @('completed', 'succeeded', 'failed', 'timeout')) {
@@ -253,7 +283,22 @@ function New-Reve图像 {
             $查询 = Invoke-RestMethod -Uri $轮询端点 -Headers @{ 'Authorization' = "Bearer $($凭据.密钥明文)" } -TimeoutSec 30
         }
         catch {
-            Write-Warning "轮询失败，稍后重试：$($_.Exception.Message)"
+            # 从异常链中找出 HTTP 状态码（4xx = 业务性失败，5xx/无响应 = 抖动）
+            $轮询状态码 = $null
+            $当前异常 = $_.Exception
+            foreach ($忽略 in 1..8) {
+                if ($null -eq $当前异常) { break }
+                if ($当前异常 -is [System.Net.WebException] -and $当前异常.Response) {
+                    try { $轮询状态码 = [int]$当前异常.Response.StatusCode } catch { }
+                    break
+                }
+                $当前异常 = $当前异常.PSObject.Properties['InnerException'] | ForEach-Object { $_.Value }
+            }
+            if ($轮询状态码 -and $轮询状态码 -ge 400 -and $轮询状态码 -lt 500) {
+                $详情 = Get-NetException详情 -Exception $_.Exception
+                throw "查询任务状态失败（HTTP $轮询状态码，业务性错误，不再重试）：$详情 （任务 ID：$任务ID）"
+            }
+            Write-Warning "轮询失败（网络抖动，稍后重试）：$($_.Exception.Message)"
             continue
         }
         $查询data属性 = $查询.PSObject.Properties['data']

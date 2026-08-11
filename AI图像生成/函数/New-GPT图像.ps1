@@ -117,20 +117,22 @@
 
         Write-Host "正在调用 $($凭据.模型) 生成图像 ..." -ForegroundColor Cyan
 
-        # 连接中断自动重试（最多 3 次）：大尺寸/高质量多参考图生成耗时长，
+        # 连接中断无限重试：大尺寸/高质量多参考图生成耗时长，
         # 客户端默认 300 秒超时或中转链路易在等待期间断开连接（"A task was canceled"
-        # 且无响应体）。重试前指数退避；成功响应或明确的 HTTP 错误不重试。
-        # 每次调用生成一个幂等键贯穿所有尝试：OpenAI 兼容 API 收到相同 Idempotency-Key
-        # 时会复用首次结果而非重新生成，避免重试导致重复计费。
+        # 且无响应体）。仅"无服务端响应体"的传输层中断才重试（退避等待，最长 30 秒）；
+        # 成功响应或明确的 HTTP 错误不重试。
+        # 重试不产生额外费用：每次调用生成一个幂等键贯穿所有尝试，OpenAI 兼容 API
+        # 收到相同 Idempotency-Key 时会复用首次结果而非重新生成，避免重复计费。
         $幂等键 = [guid]::NewGuid().ToString()
-        $最大重试 = 3
+        $尝试 = 0
         $表单 = $null
         $客户端 = $null
         $响应 = $null
-        for ($尝试 = 1; $尝试 -le $最大重试; $尝试++) {
+        while ($true) {
+            $尝试++
             if ($尝试 -gt 1) {
-                $等待秒数 = $尝试
-                Write-Host "连接中断，正在等待 $等待秒数 秒后重试（$尝试/$最大重试）..." -ForegroundColor Yellow
+                $等待秒数 = [Math]::Min($尝试, 30)
+                Write-Host "连接中断，正在等待 $等待秒数 秒后第 $尝试 次重试（幂等键相同，不会重复计费）..." -ForegroundColor Yellow
                 Start-Sleep -Seconds $等待秒数
                 $表单.Dispose()
                 $客户端.Dispose()
@@ -180,12 +182,9 @@
                 if ($详情 -match '^HTTP \d{3}[：:]' -or $详情 -match '"error"|"code"') {
                     throw "API 请求失败：$详情"
                 }
-                # 纯粹的传输层中断：无响应体，判定为可重试
-                if ($尝试 -lt $最大重试) {
-                    Write-Warning "连接被中断（无服务端响应，可能是生成超时或网络抖动）：$详情"
-                    continue
-                }
-                throw "API 请求失败（已重试 $最大重试 次）：$详情"
+                # 纯粹的传输层中断：无响应体，判定为可重试（无限重试直到成功或明确错误）
+                Write-Warning "连接被中断（无服务端响应，可能是生成超时或网络抖动）：$详情"
+                continue
             }
             catch { throw "API 请求失败：$($_.Exception.Message)" }
         }
