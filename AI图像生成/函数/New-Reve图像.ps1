@@ -1,367 +1,363 @@
 function New-Reve图像 {
-    <#
-    .SYNOPSIS
-        通过 Reve 2.1 中转站（Atlas Cloud 统一协议）生成图像。
-    .DESCRIPTION
-        走 Atlas Cloud 统一图像接口（POST /api/v1/model/generateImage）调用 Reve 2.1。
-        任务为异步提交：优先使用同步模式（enable_sync_mode）等待结果；若中转站
-        未完成即返回，将自动轮询 prediction 接口直到出图或超时。
-        密钥、基础地址与模型以 DPAPI 加密记住。
+	<#
+	.SYNOPSIS
+		通过 Reve 2.1 中转站（Atlas Cloud 统一协议）生成图像。
+	.DESCRIPTION
+		走 Atlas Cloud 统一图像接口（POST /api/v1/model/generateImage）调用 Reve 2.1。
+		任务为异步提交：优先使用同步模式（enable_sync_mode）等待结果；若中转站
+		未完成即返回，将自动轮询 prediction 接口直到出图或超时。
+		密钥、基础地址与模型以 DPAPI 加密记住。
 
-        模型变体自动选择（未显式指定 -模型 时）：
-        - 无 -参考图：使用 reve-ai/reve-2.1/text-to-image（纯文生图）。
-        - 1 张 -参考图：使用 reve-ai/reve-2.1/edit（图像编辑），提示词为编辑指令。
-        - 2~6 张 -参考图：使用 reve-ai/reve-2.1/remix（多图融合），提示词中用
-          <frame>0</frame>、<frame>1</frame> 等引用对应序号的参考图。
+		模型变体自动选择（未显式指定 -模型 时）：
+		- 无 -参考图：使用 reve-ai/reve-2.1/text-to-image（纯文生图）。
+		- 1 张 -参考图：使用 reve-ai/reve-2.1/edit（图像编辑），提示词为编辑指令。
+		- 2~6 张 -参考图：使用 reve-ai/reve-2.1/remix（多图融合），提示词中用
+		  <frame>0</frame>、<frame>1</frame> 等引用对应序号的参考图。
 
-        Atlas Cloud 的 effects 效果后处理（颗粒、光斑等 51 种）暂未开放参数。
-    .PARAMETER 提示词
-        图像描述（最长 4000 字符）。与 -提示文件 二选一。
-    .PARAMETER 提示文件
-        提示词文本文件路径。与 -提示词 二选一。
-    .PARAMETER 密钥
-        交互式输入密钥开关。指定此开关时会提示输入。
-    .PARAMETER 密钥值
-        API 令牌明文。未指定时查找已记住的值。
-    .PARAMETER 基础地址
-        中转站 Base URL。默认 https://api.atlascloud.ai。
-    .PARAMETER 模型
-        完整模型 ID。未指定时按参考图数量自动选择：
-        0 张 → text-to-image，1 张 → edit，2 张以上 → remix。
-    .PARAMETER 参考图
-        参考图像路径或 URL，1~6 张。
-        1 张时走 edit（编辑指令式提示词）；2 张以上走 remix，
-        提示词中用 <frame>N</frame> 引用（N 从 0 开始）。
-    .PARAMETER 宽高比
-        auto | 4:1 | 3:1 | 21:9 | 2:1 | 17:9 | 16:9 | 3:2 | 4:3 | 5:4 | 1:1 | 4:5 | 3:4 | 2:3 | 9:16 | 1:2 | 1:3 | 1:4。默认 auto。
-    .PARAMETER 去背景
-        移除背景，仅保留中央主体并输出透明背景。
-    .PARAMETER 输出路径
-        输出文件路径。默认时间戳 PNG。扩展名决定 output_format（.jpg/.jpeg → jpeg，.webp → webp，其余 png）；-去背景 时强制 png。
-    .PARAMETER 超时秒数
-        单次 HTTP 请求的超时秒数（提交与轮询各自独立计时），默认 500。
-        注意：轮询与下载为无限重试，不设总时长上限；此参数仅约束单个请求。
-    .PARAMETER 轮询间隔秒数
-        轮询 prediction 接口的间隔，默认 3。
-    .EXAMPLE
-        New-Reve图像 -提示词 "水彩柴犬" -密钥值 'sk-xxx'
-    .EXAMPLE
-        New-Reve图像 -提示词 "让人物穿上宇航服" -参考图 .\照片.jpg
-    .EXAMPLE
-        New-Reve图像 -提示词 "<frame>0</frame> 中的人物穿上宇航服，站在 <frame>1</frame> 的场景里" -参考图 .\人物.jpg, .\场景.jpg
-    .EXAMPLE
-        New-Reve图像 -提示词 "logo 图标" -宽高比 1:1 -去背景
-    #>
-    [CmdletBinding(DefaultParameterSetName = '提示词')]
-    param(
-        [Parameter(Mandatory = $true, Position = 0, ParameterSetName = '提示词')]
-        [ValidateNotNullOrEmpty()]
-        [string]$提示词,
+		Atlas Cloud 的 effects 效果后处理（颗粒、光斑等 51 种）暂未开放参数。
+	.PARAMETER 提示词
+		图像描述（最长 4000 字符）。与 -提示文件 二选一。
+	.PARAMETER 提示文件
+		提示词文本文件路径。与 -提示词 二选一。
+	.PARAMETER 密钥
+		交互式输入密钥开关。指定此开关时会提示输入。
+	.PARAMETER 密钥值
+		API 令牌明文。未指定时查找已记住的值。
+	.PARAMETER 基础地址
+		中转站 Base URL。默认 https://api.atlascloud.ai。
+	.PARAMETER 模型
+		完整模型 ID。未指定时按参考图数量自动选择：
+		0 张 → text-to-image，1 张 → edit，2 张以上 → remix。
+	.PARAMETER 参考图
+		参考图像路径或 URL，1~6 张。
+		1 张时走 edit（编辑指令式提示词）；2 张以上走 remix，
+		提示词中用 <frame>N</frame> 引用（N 从 0 开始）。
+	.PARAMETER 宽高比
+		auto | 4:1 | 3:1 | 21:9 | 2:1 | 17:9 | 16:9 | 3:2 | 4:3 | 5:4 | 1:1 | 4:5 | 3:4 | 2:3 | 9:16 | 1:2 | 1:3 | 1:4。默认 auto。
+	.PARAMETER 去背景
+		移除背景，仅保留中央主体并输出透明背景。
+	.PARAMETER 输出路径
+		输出文件路径。默认时间戳 PNG。扩展名决定 output_format（.jpg/.jpeg → jpeg，.webp → webp，其余 png）；-去背景 时强制 png。
+	.PARAMETER 超时秒数
+		单次 HTTP 请求的超时秒数（提交与轮询各自独立计时），默认 500。
+		注意：轮询与下载为无限重试，不设总时长上限；此参数仅约束单个请求。
+	.PARAMETER 轮询间隔秒数
+		轮询 prediction 接口的间隔，默认 3。
+	.EXAMPLE
+		New-Reve图像 -提示词 "水彩柴犬" -密钥值 'sk-xxx'
+	.EXAMPLE
+		New-Reve图像 -提示词 "让人物穿上宇航服" -参考图 .\照片.jpg
+	.EXAMPLE
+		New-Reve图像 -提示词 "<frame>0</frame> 中的人物穿上宇航服，站在 <frame>1</frame> 的场景里" -参考图 .\人物.jpg, .\场景.jpg
+	.EXAMPLE
+		New-Reve图像 -提示词 "logo 图标" -宽高比 1:1 -去背景
+	#>
+	[CmdletBinding(DefaultParameterSetName = '提示词')]
+	param(
+		[Parameter(Mandatory = $true, Position = 0, ParameterSetName = '提示词')]
+		[ValidateNotNullOrEmpty()]
+		[string]$提示词,
 
-        [Parameter(Mandatory = $true, ParameterSetName = '提示文件')]
-        [ValidateNotNullOrEmpty()]
-        [string]$提示文件,
+		[Parameter(Mandatory = $true, ParameterSetName = '提示文件')]
+		[ValidateNotNullOrEmpty()]
+		[string]$提示文件,
 
-        [Parameter()]
-        [switch]$密钥,
+		[Parameter()]
+		[switch]$密钥,
 
-        [Parameter()][string]$密钥值,
-        [Parameter()][string]$基础地址,
-        [Parameter()][string]$模型,
+		[Parameter()][string]$密钥值,
+		[Parameter()][string]$基础地址,
+		[Parameter()][string]$模型,
 
-        [Parameter()]
-        [ValidateNotNullOrEmpty()]
-        [string[]]$参考图,
+		[Parameter()]
+		[ValidateNotNullOrEmpty()]
+		[string[]]$参考图,
 
-        [Parameter()][string]$宽高比 = 'auto',
+		[Parameter()][string]$宽高比 = 'auto',
 
-        [Parameter()]
-        [switch]$去背景,
+		[Parameter()]
+		[switch]$去背景,
 
-        [Parameter()]
-        [string]$输出路径 = ".\reve_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
+		[Parameter()]
+		[string]$输出路径 = ".\reve_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
-        [Parameter()][int]$超时秒数 = 500,
+		[Parameter()][int]$超时秒数 = 500,
 
-        [Parameter()][ValidateRange(1, 30)]
-        [int]$轮询间隔秒数 = 3
-    )
+		[Parameter()][ValidateRange(1, 30)]
+		[int]$轮询间隔秒数 = 3
+	)
 
-    $配置路径 = Join-Path $env:LOCALAPPDATA 'Image-generation-cli\AI图像生成-Reve配置.xml'
+	$配置路径 = Join-Path $env:LOCALAPPDATA 'Image-generation-cli\AI图像生成-Reve配置.xml'
 
-    # 提示词
-    if ($PSCmdlet.ParameterSetName -eq '提示文件') {
-        $提示词 = Read-提示文件 -路径 $提示文件
-    }
-    if ($提示词.Length -gt 4000) {
-        throw "提示词过长：$($提示词.Length) 字符，Reve 上限为 4000 字符。"
-    }
+	# 提示词
+	if ($PSCmdlet.ParameterSetName -eq '提示文件') {
+		$提示词 = Read-提示文件 -路径 $提示文件
+	}
+	if ($提示词.Length -gt 4000) {
+		throw "提示词过长：$($提示词.Length) 字符，Reve 上限为 4000 字符。"
+	}
 
-    # 凭据
-    if ($密钥.IsPresent -and -not $密钥值) {
-        $安全密钥 = Read-Host -Prompt '请输入 API 密钥' -AsSecureString
-        $密钥值 = [System.Net.NetworkCredential]::new([string]::Empty, $安全密钥).Password
-    }
-    $记住的配置 = Import-记住的配置 -配置路径 $配置路径
+	# 凭据
+	if ($密钥.IsPresent -and -not $密钥值) {
+		$安全密钥 = Read-Host -Prompt '请输入 API 密钥' -AsSecureString
+		$密钥值 = [System.Net.NetworkCredential]::new([string]::Empty, $安全密钥).Password
+	}
+	$记住的配置 = Import-记住的配置 -配置路径 $配置路径
 
-    # 基础地址默认值
-    if (-not $基础地址 -and -not ($记住的配置 -and $记住的配置.基础地址)) {
-        $基础地址 = 'https://api.atlascloud.ai'
-    }
+	# 基础地址默认值
+	if (-not $基础地址 -and -not ($记住的配置 -and $记住的配置.基础地址)) {
+		$基础地址 = 'https://api.atlascloud.ai'
+	}
 
-    # 模型变体自动选择（未显式指定 -模型 时）：0 张 → text-to-image，1 张 → edit，2 张以上 → remix
-    if (-not $MyInvocation.BoundParameters.ContainsKey('模型')) {
-        if (-not $参考图) { $期望变体 = 'text-to-image' }
-        elseif (@($参考图).Count -eq 1) { $期望变体 = 'edit' }
-        else { $期望变体 = 'remix' }
-        if ($记住的配置 -and $记住的配置.模型) {
-            if ($记住的配置.模型 -notlike ('*/' + $期望变体)) {
-                $旧模型 = $记住的配置.模型
-                $记住的配置.模型 = $旧模型 -replace '/(remix|text-to-image|edit)$', ('/' + $期望变体)
-                Write-Host "参考图情况变化，模型自动切换：$旧模型 → $($记住的配置.模型)" -ForegroundColor Yellow
-            }
-        }
-        else {
-            $模型 = 'reve-ai/reve-2.1/' + $期望变体
-        }
-    }
+	# 模型变体自动选择（未显式指定 -模型 时）：0 张 → text-to-image，1 张 → edit，2 张以上 → remix
+	if (-not $MyInvocation.BoundParameters.ContainsKey('模型')) {
+		if (-not $参考图) { $期望变体 = 'text-to-image' }
+		elseif (@($参考图).Count -eq 1) { $期望变体 = 'edit' }
+		else { $期望变体 = 'remix' }
+		if ($记住的配置 -and $记住的配置.模型) {
+			if ($记住的配置.模型 -notlike ('*/' + $期望变体)) {
+				$旧模型 = $记住的配置.模型
+				$记住的配置.模型 = $旧模型 -replace '/(remix|text-to-image|edit)$', ('/' + $期望变体)
+				Write-Host "参考图情况变化，模型自动切换：$旧模型 → $($记住的配置.模型)" -ForegroundColor Yellow
+			}
+		}
+		else {
+			$模型 = 'reve-ai/reve-2.1/' + $期望变体
+		}
+	}
 
-    $凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
-        -记住的配置 $记住的配置 -配置路径 $配置路径
+	$凭据 = Resolve-配置凭据 -参数密钥 $密钥值 -参数基础地址 $基础地址 -参数模型 $模型 `
+		-记住的配置 $记住的配置 -配置路径 $配置路径
 
-    # 参考图：URL 直接透传，本地文件转 base64（单张 ≤40MB，总计 ≤100MB）
-    $图像值列表 = [System.Collections.Generic.List[string]]::new()
-    if ($参考图) {
-        $总数据量 = [long]0
-        foreach ($单张 in $参考图) {
-            if ($单张 -match '^https?://') {
-                $图像值列表.Add($单张)
-            }
-            else {
-                $数据 = Get-图像数据 -来源 $单张
-                if ($数据.字节.Length -gt 41943040) { throw "参考图过大（上限 40MB）：$单张" }
-                $总数据量 += $数据.字节.Length
-                $图像值列表.Add([Convert]::ToBase64String($数据.字节))
-            }
-        }
-        if ($总数据量 -gt 104857600) { throw "参考图总大小超过 100MB 上限。" }
-    }
+	# 参考图：URL 直接透传，本地文件转 base64（单张 ≤40MB，总计 ≤100MB）
+	$图像值列表 = [System.Collections.Generic.List[string]]::new()
+	if ($参考图) {
+		$总数据量 = [long]0
+		foreach ($单张 in $参考图) {
+			if ($单张 -match '^https?://') {
+				$图像值列表.Add($单张)
+			}
+			else {
+				$数据 = Get-图像数据 -来源 $单张
+				if ($数据.字节.Length -gt 41943040) { throw "参考图过大（上限 40MB）：$单张" }
+				$总数据量 += $数据.字节.Length
+				$图像值列表.Add([Convert]::ToBase64String($数据.字节))
+			}
+		}
+		if ($总数据量 -gt 104857600) { throw "参考图总大小超过 100MB 上限。" }
+	}
 
-    # 输出格式由扩展名决定；-去背景 需要透明通道，强制 png
-    $输出扩展名 = [System.IO.Path]::GetExtension($输出路径).ToLowerInvariant()
-    $输出格式 = switch ($输出扩展名) {
-        '.jpg'  { 'jpeg' }
-        '.jpeg' { 'jpeg' }
-        '.webp' { 'webp' }
-        default { 'png' }
-    }
-    if ($去背景.IsPresent -and $输出格式 -eq 'jpeg') {
-        $输出格式 = 'png'
-        $输出路径 = [System.IO.Path]::ChangeExtension($输出路径, '.png')
-        Write-Warning "去背景需要透明通道，输出已改为 png：$输出路径"
-    }
+	# 输出格式由扩展名决定；-去背景 需要透明通道，强制 png
+	$输出扩展名 = [System.IO.Path]::GetExtension($输出路径).ToLowerInvariant()
+	$输出格式 = switch ($输出扩展名) {
+		'.jpg'  { 'jpeg' }
+		'.jpeg' { 'jpeg' }
+		'.webp' { 'webp' }
+		default { 'png' }
+	}
+	if ($去背景.IsPresent -and $输出格式 -eq 'jpeg') {
+		$输出格式 = 'png'
+		$输出路径 = [System.IO.Path]::ChangeExtension($输出路径, '.png')
+		Write-Warning "去背景需要透明通道，输出已改为 png：$输出路径"
+	}
 
-    # 端点
-    if ($凭据.基础地址 -match '/api/v\d+/?$') { $api基础 = $凭据.基础地址.TrimEnd('/') }
-    else { $api基础 = $凭据.基础地址.TrimEnd('/') + '/api/v1' }
-    $提交端点 = "$api基础/model/generateImage"
+	# 端点
+	if ($凭据.基础地址 -match '/api/v\d+/?$') { $api基础 = $凭据.基础地址.TrimEnd('/') }
+	else { $api基础 = $凭据.基础地址.TrimEnd('/') + '/api/v1' }
+	$提交端点 = "$api基础/model/generateImage"
 
-    # 请求体（Atlas Cloud 统一图像协议）
-    # 不启用 enable_sync_mode：同步等待会让同一连接挂起数十秒等出图，期间易被网络切断；
-    # 异步提交立即返回任务 ID，下方轮询循环负责等到出图。
-    # enable_base64_output=false（URL 模式）：成果以 CDN URL 持久化，下载中断后只需
-    # 重新下载同一 URL，不必重新生成（重新生成会再次计费）。
-    $请求体对象 = [ordered]@{
-        model                = $凭据.模型
-        prompt               = $提示词
-        aspect_ratio         = $宽高比
-        output_format        = $输出格式
-        enable_base64_output = $false
-    }
-    if ($图像值列表.Count -gt 0) {
-        if ($凭据.模型 -like '*/edit') {
-            # Edit 变体使用单数字段 image（URL 或 base64 字符串）
-            $请求体对象['image'] = $图像值列表[0]
-        }
-        else {
-            $图像值数组 = $图像值列表.ToArray()
-            $请求体对象['images'] = $图像值数组
-        }
-    }
-    if ($去背景.IsPresent) { $请求体对象['remove_background'] = $true }
+	# 请求体（Atlas Cloud 统一图像协议）
+	# 不启用 enable_sync_mode：同步等待会让同一连接挂起数十秒等出图，期间易被网络切断；
+	# 异步提交立即返回任务 ID，下方轮询循环负责等到出图。
+	# enable_base64_output=false（URL 模式）：成果以 CDN URL 持久化，下载中断后只需
+	# 重新下载同一 URL，不必重新生成（重新生成会再次计费）。
+	$请求体对象 = [ordered]@{
+		model                = $凭据.模型
+		prompt               = $提示词
+		aspect_ratio         = $宽高比
+		output_format        = $输出格式
+		enable_base64_output = $false
+	}
+	if ($图像值列表.Count -gt 0) {
+		if ($凭据.模型 -like '*/edit') {
+			# Edit 变体使用单数字段 image（URL 或 base64 字符串）
+			$请求体对象['image'] = $图像值列表[0]
+		}
+		else {
+			$图像值数组 = $图像值列表.ToArray()
+			$请求体对象['images'] = $图像值数组
+		}
+	}
+	if ($去背景.IsPresent) { $请求体对象['remove_background'] = $true }
 
-    $请求体 = $请求体对象 | ConvertTo-Json -Depth 10
+	$请求体 = $请求体对象 | ConvertTo-Json -Depth 10
 
-    Write-Host "正在调用 $($凭据.模型) 生成图像（原生 4K，通常需要数十秒）..." -ForegroundColor Cyan
+	Write-Host "正在调用 $($凭据.模型) 生成图像（原生 4K，通常需要数十秒）..." -ForegroundColor Cyan
 
-    # 用 HttpClient 提交：参考图 base64 后请求体可达数十 MB，
-    # Invoke-RestMethod（HttpWebRequest）默认的 Expect 100-continue 在大体积上传时易被服务端断开。
-    # 密钥验证失败（401/403）时不直接失败退出：立即交互式提示输入新密钥，然后重试提交。
-    Add-Type -AssemblyName System.Net.Http
-    while ($true) {
-        $客户端 = [System.Net.Http.HttpClient]::new()
-        $客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
-        $客户端.DefaultRequestHeaders.Authorization =
-            [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
-        $内容 = [System.Net.Http.StringContent]::new($请求体, [System.Text.Encoding]::UTF8, 'application/json')
-        try {
-            $响应消息 = $客户端.PostAsync($提交端点, $内容).GetAwaiter().GetResult()
-            $响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            if (-not $响应消息.IsSuccessStatusCode) {
-                $状态码 = [int]$响应消息.StatusCode
-                if ($状态码 -eq 401) {
-                    Write-Warning "密钥验证失败（HTTP $状态码）：$响应文本"
-                    $新安全密钥 = Read-Host -Prompt '请重新输入正确的 API 密钥以立即重试（留空则取消）' -AsSecureString
-                    if ($新安全密钥.Length -eq 0) {
-                        throw [System.Management.Automation.RuntimeException]"未输入密钥，请求已取消。"
-                    }
-                    $凭据.安全密钥对象 = $新安全密钥
-                    $凭据.密钥明文 = [System.Net.NetworkCredential]::new([string]::Empty, $新安全密钥).Password
-                    $凭据.密钥来源 = '交互输入'
-                    Write-Host "使用新密钥重试提交 ..." -ForegroundColor Yellow
-                    continue
-                }
-                throw [System.Management.Automation.RuntimeException]"HTTP $状态码：$响应文本"
-            }
-            $响应 = $响应文本 | ConvertFrom-Json
-            break
-        }
-        catch [System.Management.Automation.MethodInvocationException] {
-            $详情 = Get-NetException详情 -Exception $_.Exception
-            throw [System.Management.Automation.RuntimeException]("API 请求失败：$详情")
-        }
-        catch [System.Management.Automation.RuntimeException] { throw }
-        catch { throw "API 请求失败：$($_.Exception.Message)" }
-        finally { $内容.Dispose(); $客户端.Dispose() }
-    }
+	# 用 HttpClient 提交：参考图 base64 后请求体可达数十 MB，
+	# Invoke-RestMethod（HttpWebRequest）默认的 Expect 100-continue 在大体积上传时易被服务端断开。
+	# 密钥验证失败（401，实测密钥过期时返回此码）时不直接失败退出：
+	# 立即交互式提示输入新密钥，然后重试提交。
+	Add-Type -AssemblyName System.Net.Http
+	while ($true) {
+		$客户端 = [System.Net.Http.HttpClient]::new()
+		$客户端.Timeout = [TimeSpan]::FromSeconds($超时秒数)
+		$客户端.DefaultRequestHeaders.Authorization =
+			[System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $凭据.密钥明文)
+		$内容 = [System.Net.Http.StringContent]::new($请求体, [System.Text.Encoding]::UTF8, 'application/json')
+		try {
+			$响应消息 = $客户端.PostAsync($提交端点, $内容).GetAwaiter().GetResult()
+			$响应文本 = $响应消息.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+			if (-not $响应消息.IsSuccessStatusCode) {
+				$状态码 = [int]$响应消息.StatusCode
+				if ($状态码 -eq 401) {
+					Write-Warning "密钥验证失败（HTTP $状态码）：$响应文本"
+					$新安全密钥 = Read-Host -Prompt '请重新输入正确的 API 密钥以立即重试（留空则取消）' -AsSecureString
+					if ($新安全密钥.Length -eq 0) {
+						throw [System.Management.Automation.RuntimeException]"未输入密钥，请求已取消。"
+					}
+					$凭据.安全密钥对象 = $新安全密钥
+					$凭据.密钥明文 = [System.Net.NetworkCredential]::new([string]::Empty, $新安全密钥).Password
+					$凭据.密钥来源 = '交互输入'
+					Write-Host "使用新密钥重试提交 ..." -ForegroundColor Yellow
+					continue
+				}
+				throw [System.Management.Automation.RuntimeException]"HTTP $状态码：$响应文本"
+			}
+			$响应 = $响应文本 | ConvertFrom-Json
+			break
+		}
+		catch [System.Management.Automation.MethodInvocationException] {
+			$详情 = Get-NetException详情 -Exception $_.Exception
+			throw [System.Management.Automation.RuntimeException]("API 请求失败：$详情")
+		}
+		catch [System.Management.Automation.RuntimeException] { throw }
+		catch { throw "API 请求失败：$($_.Exception.Message)" }
+		finally { $内容.Dispose(); $客户端.Dispose() }
+	}
 
-    # 记住凭据
-    if ($凭据.密钥来源 -ne '已记住' -or $凭据.基础地址来源 -ne '已记住' -or $凭据.模型来源 -ne '已记住') {
-        try {
-            Save-配置 -安全密钥 $凭据.安全密钥对象 -保存基础地址 $凭据.基础地址 -保存模型 $凭据.模型 -配置路径 $配置路径
-            Write-Host "密钥、基础地址与模型已记住：$配置路径" -ForegroundColor DarkGray
-        }
-        catch { Write-Warning "配置保存失败：$($_.Exception.Message)" }
-    }
+	# 记住凭据
+	if ($凭据.密钥来源 -ne '已记住' -or $凭据.基础地址来源 -ne '已记住' -or $凭据.模型来源 -ne '已记住') {
+		try {
+			Save-配置 -安全密钥 $凭据.安全密钥对象 -保存基础地址 $凭据.基础地址 -保存模型 $凭据.模型 -配置路径 $配置路径
+			Write-Host "密钥、基础地址与模型已记住：$配置路径" -ForegroundColor DarkGray
+		}
+		catch { Write-Warning "配置保存失败：$($_.Exception.Message)" }
+	}
 
-    # 响应外层 code 检查
-    $code属性 = $响应.PSObject.Properties['code']
-    if ($code属性 -and $code属性.Value -ne 0 -and $code属性.Value -ne 200) {
-        $message属性 = $响应.PSObject.Properties['message']
-        $message = if ($message属性 -and $message属性.Value) { $message属性.Value } else { '' }
-        throw "API 返回失败（code=$($code属性.Value)）：$message"
-    }
-    $data属性 = $响应.PSObject.Properties['data']
-    $数据 = if ($data属性) { $data属性.Value } else { $null }
-    if (-not $数据) {
-        $响应预览 = $(try { $响应 | ConvertTo-Json -Depth 6 -Compress } catch { (Out-String -InputObject $响应) })
-        throw "响应中没有 data 字段：$响应预览"
-    }
+	# 响应外层 code 检查
+	$code属性 = $响应.PSObject.Properties['code']
+	if ($code属性 -and $code属性.Value -ne 0 -and $code属性.Value -ne 200) {
+		$message属性 = $响应.PSObject.Properties['message']
+		$message = if ($message属性 -and $message属性.Value) { $message属性.Value } else { '' }
+		throw "API 返回失败（code=$($code属性.Value)）：$message"
+	}
+	$data属性 = $响应.PSObject.Properties['data']
+	$数据 = if ($data属性) { $data属性.Value } else { $null }
+	if (-not $数据) {
+		$响应预览 = $(try { $响应 | ConvertTo-Json -Depth 6 -Compress } catch { (Out-String -InputObject $响应) })
+		throw "响应中没有 data 字段：$响应预览"
+	}
 
-    $任务ID属性 = $数据.PSObject.Properties['id']
-    if (-not $任务ID属性 -or -not $任务ID属性.Value) {
-        throw "响应中没有任务 ID：$($数据 | ConvertTo-Json -Depth 6 -Compress)"
-    }
-    $任务ID = $任务ID属性.Value
+	$任务ID属性 = $数据.PSObject.Properties['id']
+	if (-not $任务ID属性 -or -not $任务ID属性.Value) {
+		throw "响应中没有任务 ID：$($数据 | ConvertTo-Json -Depth 6 -Compress)"
+	}
+	$任务ID = $任务ID属性.Value
 
-    # 状态与 outputs
-    $状态 = ''
-    $状态属性 = $数据.PSObject.Properties['status']
-    if ($状态属性 -and $状态属性.Value) { $状态 = $状态属性.Value }
-    $输出列表 = $null
-    $输出属性 = $数据.PSObject.Properties['outputs']
-    if ($输出属性 -and $输出属性.Value) { $输出列表 = @($输出属性.Value) }
+	# 状态与 outputs
+	$状态 = ''
+	$状态属性 = $数据.PSObject.Properties['status']
+	if ($状态属性 -and $状态属性.Value) { $状态 = $状态属性.Value }
+	$输出列表 = $null
+	$输出属性 = $数据.PSObject.Properties['outputs']
+	if ($输出属性 -and $输出属性.Value) { $输出列表 = @($输出属性.Value) }
 
-    # 异步提交后轮询等待出图。区分两类轮询失败：
-    # - 网络抖动（连接中断、超时、5xx）：短请求，无限重试等待恢复；
-    # - 业务性失败（4xx：任务不存在、参数错误、权限问题等）：重试无意义，立即报错退出。
-    # 不设总时长上限（-超时秒数 仅作用于单次请求），直到服务端给出终态。
-    $轮询端点 = "$api基础/model/prediction/$任务ID"
-    while ($状态 -notin @('completed', 'succeeded', 'failed', 'timeout')) {
-        Start-Sleep -Seconds $轮询间隔秒数
-        try {
-            $查询 = Invoke-RestMethod -Uri $轮询端点 -Headers @{ 'Authorization' = "Bearer $($凭据.密钥明文)" } -TimeoutSec 30
-        }
-        catch {
-            # 从异常链中找出 HTTP 状态码（4xx = 业务性失败，5xx/无响应 = 抖动）
-            $轮询状态码 = $null
-            $当前异常 = $_.Exception
-            foreach ($忽略 in 1..8) {
-                if ($null -eq $当前异常) { break }
-                if ($当前异常 -is [System.Net.WebException] -and $当前异常.Response) {
-                    try { $轮询状态码 = [int]$当前异常.Response.StatusCode } catch { }
-                    break
-                }
-                $当前异常 = $当前异常.PSObject.Properties['InnerException'] | ForEach-Object { $_.Value }
-            }
-            if ($轮询状态码 -and $轮询状态码 -ge 400 -and $轮询状态码 -lt 500) {
-                $详情 = Get-NetException详情 -Exception $_.Exception
-                throw "查询任务状态失败（HTTP $轮询状态码，业务性错误，不再重试）：$详情 （任务 ID：$任务ID）"
-            }
-            Write-Warning "轮询失败（网络抖动，稍后重试）：$($_.Exception.Message)"
-            continue
-        }
-        $查询data属性 = $查询.PSObject.Properties['data']
-        if (-not $查询data属性 -or -not $查询data属性.Value) { continue }
-        # 用最新一次查询的数据覆盖，保证后续错误/输出解析基于最终状态
-        $数据 = $查询data属性.Value
-        $查询状态属性 = $数据.PSObject.Properties['status']
-        if ($查询状态属性 -and $查询状态属性.Value) { $状态 = $查询状态属性.Value }
-        $查询输出属性 = $数据.PSObject.Properties['outputs']
-        if ($查询输出属性 -and $查询输出属性.Value) { $输出列表 = @($查询输出属性.Value) }
-    }
+	# 异步提交后轮询等待出图。区分两类轮询失败：
+	# - 网络抖动（连接中断、超时、5xx）：短请求，无限重试等待恢复；
+	# - 业务性失败（4xx：任务不存在、参数错误、权限问题等）：重试无意义，立即报错退出。
+	# 不设总时长上限（-超时秒数 仅作用于单次请求），直到服务端给出终态。
+	$轮询端点 = "$api基础/model/prediction/$任务ID"
+	while ($状态 -notin @('completed', 'succeeded', 'failed', 'timeout')) {
+		Start-Sleep -Seconds $轮询间隔秒数
+		try {
+			$查询 = Invoke-RestMethod -Uri $轮询端点 -Headers @{ 'Authorization' = "Bearer $($凭据.密钥明文)" } -TimeoutSec 30
+		}
+		catch {
+			# 从异常链中找出 HTTP 状态码（4xx = 业务性失败，5xx/无响应 = 抖动）
+			$轮询状态码 = $null
+			$当前异常 = $_.Exception
+			foreach ($忽略 in 1..8) {
+				if ($null -eq $当前异常) { break }
+				if ($当前异常 -is [System.Net.WebException] -and $当前异常.Response) {
+					try { $轮询状态码 = [int]$当前异常.Response.StatusCode } catch { }
+					break
+				}
+				$当前异常 = $当前异常.PSObject.Properties['InnerException'] | ForEach-Object { $_.Value }
+			}
+			if ($轮询状态码 -and $轮询状态码 -ge 400 -and $轮询状态码 -lt 500) {
+				$详情 = Get-NetException详情 -Exception $_.Exception
+				throw "查询任务状态失败（HTTP $轮询状态码，业务性错误，不再重试）：$详情 （任务 ID：$任务ID）"
+			}
+			Write-Warning "轮询失败（网络抖动，稍后重试）：$($_.Exception.Message)"
+			continue
+		}
+		$查询data属性 = $查询.PSObject.Properties['data']
+		if (-not $查询data属性 -or -not $查询data属性.Value) { continue }
+		# 用最新一次查询的数据覆盖，保证后续错误/输出解析基于最终状态
+		$数据 = $查询data属性.Value
+		$查询状态属性 = $数据.PSObject.Properties['status']
+		if ($查询状态属性 -and $查询状态属性.Value) { $状态 = $查询状态属性.Value }
+		$查询输出属性 = $数据.PSObject.Properties['outputs']
+		if ($查询输出属性 -and $查询输出属性.Value) { $输出列表 = @($查询输出属性.Value) }
+	}
 
-    if ($状态 -in @('failed', 'timeout')) {
-        $失败信息 = ''
-        $错误属性 = $数据.PSObject.Properties['error']
-        if ($错误属性 -and $错误属性.Value) { $失败信息 = $错误属性.Value }
-        throw "图像生成失败（status=$状态）：$失败信息 （任务 ID：$任务ID）"
-    }
+	if ($状态 -in @('failed', 'timeout')) {
+		$失败信息 = ''
+		$错误属性 = $数据.PSObject.Properties['error']
+		if ($错误属性 -and $错误属性.Value) { $失败信息 = $错误属性.Value }
+		throw "图像生成失败（status=$状态）：$失败信息 （任务 ID：$任务ID）"
+	}
 
-    if (-not $输出列表 -or $输出列表.Count -eq 0) {
-        throw "任务完成但没有输出内容：$($数据 | ConvertTo-Json -Depth 6 -Compress)"
-    }
+	if (-not $输出列表 -or $输出列表.Count -eq 0) {
+		throw "任务完成但没有输出内容：$($数据 | ConvertTo-Json -Depth 6 -Compress)"
+	}
 
-    # NSFW 检查
-    $nsfw属性 = $数据.PSObject.Properties['has_nsfw_contents']
-    if ($nsfw属性 -and $nsfw属性.Value -and @($nsfw属性.Value).Count -gt 0 -and @($nsfw属性.Value)[0] -eq $true) {
-        throw "生成内容被判定为 NSFW 而拒绝返回。请修改提示词后重试。"
-    }
+	# NSFW 检查
+	$nsfw属性 = $数据.PSObject.Properties['has_nsfw_contents']
+	if ($nsfw属性 -and $nsfw属性.Value -and @($nsfw属性.Value).Count -gt 0 -and @($nsfw属性.Value)[0] -eq $true) {
+		throw "生成内容被判定为 NSFW 而拒绝返回。请修改提示词后重试。"
+	}
 
-    # 耗时信息
-    $耗时属性 = $数据.PSObject.Properties['executionTime']
-    if ($耗时属性 -and $耗时属性.Value) {
-        Write-Host "远端耗时: $([math]::Round($耗时属性.Value / 1000, 1)) 秒" -ForegroundColor DarkGray
-    }
+	# 耗时信息
+	$耗时属性 = $数据.PSObject.Properties['executionTime']
+	if ($耗时属性 -and $耗时属性.Value) {
+		Write-Host "远端耗时: $([math]::Round($耗时属性.Value / 1000, 1)) 秒" -ForegroundColor DarkGray
+	}
 
-    # 保存输出。URL 模式（enable_base64_output=false）下 outputs[0] 为 CDN URL，
-    # 下载失败时带退避无限重试（成果已在远端持久化，重试不重新生成、不额外计费）。
-    $输出内容 = "$($输出列表[0])".Trim()
+	# 保存输出。enable_base64_output=false 已强制 URL 模式，实测确认 outputs[0] 为 CDN URL；
+	# 下载失败时带退避无限重试（成果已在远端持久化，重试不重新生成、不额外计费）。
+	$输出内容 = "$($输出列表[0])".Trim()
 
-    $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
-    if ($输出内容 -match '^data:image/[a-zA-Z0-9.+-]+;base64,') {
-        # 兼容：base64 data URI（旧模式或个别中转站行为）
-        $b64部分 = $输出内容.Substring($输出内容.IndexOf(',') + 1)
-        [System.IO.File]::WriteAllBytes($解析后输出, [Convert]::FromBase64String($b64部分))
-    }
-    elseif ($输出内容 -match '^https?://') {
-        $下载尝试 = 0
-        while ($true) {
-            $下载尝试++
-            try {
-                Invoke-WebRequest -Uri $输出内容 -OutFile $解析后输出 -TimeoutSec $超时秒数
-                break
-            }
-            catch {
-                Write-Warning "下载失败（第 $下载尝试 次），稍后重试：$($_.Exception.Message)"
-                Start-Sleep -Seconds ([Math]::Min($下载尝试, 30))
-            }
-        }
-    }
-    else {
-        $预览长度 = [Math]::Min(300, $输出内容.Length)
-        throw "输出内容既不是 URL 也不是 data URI，无法保存。前 $预览长度 字符预览：`n$($输出内容.Substring(0, $预览长度))"
-    }
-    Write-Host "图像已保存: $解析后输出" -ForegroundColor Green
-    return $解析后输出
+	$解析后输出 = Resolve-输出路径 -输出路径 $输出路径
+	if ($输出内容 -match '^https?://') {
+		$下载尝试 = 0
+		while ($true) {
+			$下载尝试++
+			try {
+				Invoke-WebRequest -Uri $输出内容 -OutFile $解析后输出 -TimeoutSec $超时秒数
+				break
+			}
+			catch {
+				Write-Warning "下载失败（第 $下载尝试 次），稍后重试：$($_.Exception.Message)"
+				Start-Sleep -Seconds ([Math]::Min($下载尝试, 30))
+			}
+		}
+	}
+	else {
+		$预览长度 = [Math]::Min(300, $输出内容.Length)
+		throw "URL 模式下输出应为 CDN URL，实际不是。前 $预览长度 字符预览：`n$($输出内容.Substring(0, $预览长度))"
+	}
+	Write-Host "图像已保存: $解析后输出" -ForegroundColor Green
+	return $解析后输出
 }

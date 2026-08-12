@@ -26,7 +26,7 @@ New-Reve图像 —— Reve 2.1（Atlas Cloud 协议，默认 https://api.atlascl
   New-Reve图像 -提示词 "水彩柴犬"
   New-Reve图像 -提示词 "让人物穿上宇航服" -参考图 .\照片.jpg            （1 张 → edit）
   New-Reve图像 -提示词 "雌小鬼虫惑魔（<frame>0</frame>）与魅惑蛇女（<frame>1</frame>）撕打大战一团，腹黑病毒娘埃博拉酱（<frame>2</frame>）坏笑看戏。注意手指、脚趾和肢体结构合理性" -参考图 "D:\OneDrive\图片\虫惑魔\合并虫惑魔.png","D:\Image-generation-cli\gemini_20260811_001744.png","D:\OneDrive\图片\自设\立绘.jpg"  （2~6 张 → remix）
-  可选：-宽高比 1:1（18 种）-去背景。密钥失效（401/403）时会立即交互式提示输入新密钥并重试。
+  可选：-宽高比 auto（18 种）-去背景。密钥失效（401）时会立即交互式提示输入新密钥并重试。
 
 New-MAI图像 —— 微软 MAI-Image-2.5（OpenRouter Image API，默认 https://openrouter.ai）
   New-MAI图像 -提示词 "水彩柴犬" -密钥值 'sk-or-xxx'
