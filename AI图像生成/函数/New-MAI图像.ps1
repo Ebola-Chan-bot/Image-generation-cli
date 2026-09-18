@@ -3,12 +3,12 @@ function New-MAI图像 {
     .SYNOPSIS
         调用微软 MAI 图像模型生成图像。
     .DESCRIPTION
-        走 OpenRouter 统一图像接口（POST /api/v1/images）调用 MAI-Image-2.5
-        （microsoft/mai-image-2.5，由 Azure AI Foundry 提供服务）。
+        走 OpenRouter 统一图像接口（POST /api/v1/images）调用 MAI-Image
+        （microsoft/mai-image，由 Azure AI Foundry 提供服务）。
         图像以 base64 返回（data[0].b64_json），media_type 标识实际格式（通常为 PNG）。
         密钥、基础地址与模型以 DPAPI 加密记住。计费为全包制：成功出图整张计费，失败不计费。
 
-        mai-image-2.5 端点能力：
+        mai-image 端点能力：
         - 参考图（input_references）：最多 1 张。
         - 宽高比：仅 1:1、4:3、3:4、16:9、9:16、3:2、2:3、auto。
         - 单次出图张数（n）：固定 1。
@@ -27,10 +27,10 @@ function New-MAI图像 {
         OpenRouter 模型 ID。默认 microsoft/mai-image-2.5。
     .PARAMETER 参考图
         参考图像路径或 URL，用于图生图编辑（input_references）。
-        mai-image-2.5 端点最多支持 1 张；
+        mai-image 端点最多支持 1 张；
         本地文件自动转为 base64 data URI，URL 直接透传。
     .PARAMETER 宽高比
-        mai-image-2.5 支持：1:1 | 4:3 | 3:4 | 16:9 | 9:16 | 3:2 | 2:3 | auto。默认不发送。
+        mai-image 支持：1:1 | 4:3 | 3:4 | 16:9 | 9:16 | 3:2 | 2:3 | auto。默认不发送。
     .PARAMETER 尺寸
         分辨率档位（512 | 1K | 2K | 4K）或精确像素 WxH。默认不发送。
     .PARAMETER 数量

@@ -1,4 +1,4 @@
-从命令行调用 GPT-Image-2 和 Gemini 系列模型生成 AI 图像的 PowerShell 模块。
+从命令行调用特定模型生成 AI 图像。
 
 # 安装
 
@@ -12,7 +12,7 @@ Copy-Item -Recurse .\AI图像生成\ "$($env:PSModulePath.Split(';')[0])\AI图�
 
 # 使用
 
-## GPT-Image-2（OpenAI 兼容接口）
+## GPT-Image（OpenAI 兼容接口）
 
 ```powershell
 # 首次使用需指定密钥和基础地址，之后自动记住

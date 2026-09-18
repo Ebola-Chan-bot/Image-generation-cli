@@ -1,7 +1,7 @@
 function New-Reve图像 {
 	<#
 	.SYNOPSIS
-		通过 Reve 2.1 中转站（Atlas Cloud 统一协议）生成图像。
+		通过 Reve 中转站（Atlas Cloud 统一协议）生成图像。
 	.DESCRIPTION
 		走 Atlas Cloud 统一图像接口（POST /api/v1/model/generateImage）调用 Reve 2.1。
 		任务为异步提交：优先使用同步模式（enable_sync_mode）等待结果；若中转站
