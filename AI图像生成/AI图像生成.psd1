@@ -6,7 +6,7 @@
     CompanyName       = ''
     Copyright         = '(c) 2026. All rights reserved.'
     Description       = @'
-通过 OpenAI 兼容接口（GPT-Image-2）、Gemini generateContent 接口、Reve v2 接口与 OpenRouter Image API（MAI）生成 AI 图像。
+通过 OpenAI 兼容接口（GPT-Image-2）、Gemini generateContent 接口、Reve v2 接口、OpenRouter Image API（MAI）与商汤日日新图像接口（SenseNova U1 系列）生成 AI 图像。
 支持参考图编辑、DPAPI 凭据记忆、搜索增强。
 公开函数使用方法（首次使用任选其一提供凭据，之后自动记忆）：
   -密钥           交互式输入密钥
@@ -16,7 +16,7 @@
 New-GPT图像 —— gpt-image-2（OpenAI 兼容接口，自动补 /v1）
   New-GPT图像 -提示词 "水彩柴犬" -基础地址 'https://open.cherryin.net/v1'
   New-GPT图像 -提示词 "优化手脚结构细节，脚趾甲要粉白圆润可爱" -参考图 "D:\Image-generation-cli\reve_20260811_135446.png" -蒙版 "D:\Image-generation-cli\135446蒙版.png"
-  可选：-尺寸 2880x2880 -质量 high；参考图最多 16 张（≤50MB/张），蒙版仅作用于第一张且需透明通道。
+  可选：-尺寸 2880x2880 -质量 high（2.5 系列还支持 xhigh/max）；参考图最多 16 张（≤50MB/张），蒙版仅作用于第一张且需透明通道。
 
 New-Gemini图像 —— Gemini generateContent（自动补 /v1beta）
   New-Gemini图像 -提示词 "水彩柴犬" -密钥值 'sk-xxx' -模型 'gemini-3.1-flash-image-preview'
@@ -33,19 +33,25 @@ New-MAI图像 —— 微软 MAI-Image-2.5（OpenRouter Image API，默认 https:
   New-MAI图像 -提示词 "改成吉卜力风格" -参考图 .\照片.png
   可选：-宽高比 auto（8 种）-尺寸 1K -数量 2。参考图最多 1 张。
 
+New-SenseNova图像 —— 商汤日日新 U1 系列（默认官网 + SenseNova U1 Pro）
+  New-SenseNova图像 -提示词 "水彩柴犬" -密钥值 'xxx'
+  New-SenseNova图像 -提示词 "把背景改成雪山" -参考图 .\照片.png
+  可选：-尺寸 auto/2K/4K/WxH -水印 -保留提示词 -输出格式 png/jpg/webp。
+  注意：U1 Pro 处于邀测阶段，未开通时用 -模型 换已开放模型（如 sensenova-u1.5-lite）。
+
 所有函数的 -提示文件 参数可传入提示词文本文件代替 -提示词；-密钥 开关可随时交互式更换密钥。
 '@
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('New-GPT图像', 'New-Gemini图像', 'New-Reve图像', 'New-MAI图像')
+    FunctionsToExport = @('New-GPT图像', 'New-Gemini图像', 'New-Reve图像', 'New-MAI图像', 'New-SenseNova图像')
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()
     PrivateData       = @{
         PSData = @{
-            Tags         = @('AI', 'Image', 'GPT', 'Gemini', 'Reve', 'MAI', '图像生成', '中文')
+            Tags         = @('AI', 'Image', 'GPT', 'Gemini', 'Reve', 'MAI', 'SenseNova', '图像生成', '中文')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ProjectUri   = 'https://github.com/Ebola-Chan-bot/Image-generation-cli'
-            ReleaseNotes = '新增 New-MAI图像：通过 OpenRouter Image API 调用微软 MAI-Image-2.5'
+            ReleaseNotes = '新增 New-SenseNova图像：通过商汤日日新图像接口调用 SenseNova U1 系列（默认 SenseNova U1 Pro）；新增 U1 Pro 邀测未开通时的模型降级提示'
         }
     }
 }

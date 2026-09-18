@@ -22,7 +22,7 @@ New-GPT图像 -提示词 "一只在月光下奔跑的柴犬，水彩风格" `
 # 从文件读入提示词
 New-GPT图像 -提示文件 .\提示词.txt
 
-# 指定尺寸和质量
+# 指定尺寸和质量（质量档位：low/medium/high/auto；GPT-Image-2.5 系列还支持 xhigh/max）
 New-GPT图像 -提示词 "赛博朋克城市夜景" -尺寸 1536x1024 -质量 high
 
 # 基于参考图生成
@@ -99,6 +99,29 @@ New-MAI图像 -提示词 "电影海报" -宽高比 16:9 -数量 2
 
 计费为全包制：成功出图整张计费，失败不计费。
 
+## SenseNova U1 系列（商汤日日新图像接口）
+
+```powershell
+# 首次使用只需指定密钥（基础地址默认官网 https://token.sensenova.cn/v1，模型默认 SenseNova U1 Pro）
+# 密钥在 https://platform.sensenova.cn/console/keys 创建
+New-SenseNova图像 -提示词 "水彩柴犬" -密钥值 'xxxxxxxx'
+
+# 基于参考图编辑（走 /v1/images/edits，本地文件自动转 Data-URL）
+New-SenseNova图像 -提示词 "把背景改成雪山，人物保持不变" -参考图 .\照片.png
+
+# 高分辨率与格式控制
+New-SenseNova图像 -提示词 "神经网络发展史信息图" -尺寸 4K -输出格式 webp
+
+# U1 Pro 处于邀测阶段，未开通时更换为已开放模型
+New-SenseNova图像 -提示词 "水彩柴犬" -模型 'sensenova-u1.5-lite'
+```
+
+- `-尺寸`：`auto`（默认）/ `2K` / `4K` / 精确像素 `WxH`（宽高须为 32 的倍数、512~4096、长短边之比 ≤3，本地预校验）。
+- 图像统一以 base64 返回并直接落盘，避开 url 模式临时链接仅 24 小时有效的问题。
+- `-水印` 默认关闭（官方无水印公测免费，后续转付费特性）；`-保留提示词` 跳过平台提示词自动润色。
+- 参考图仅支持公网 URL 或本地文件（自动转带 `data:image/*;base64,` 前缀的 Data-URL，裸 base64 会被官方驳回）。
+- `n` 固定为 1（平台限制）；需要多张时多次调用。
+
 # 凭据安全
 
 密钥使用 Windows DPAPI 加密存储在 `%LOCALAPPDATA%\Image-generation-cli\` 下，仅当前用户可解密。调用成功后自动记住。
@@ -113,7 +136,8 @@ AI图像生成/
 │   ├── New-GPT图像.ps1
 │   ├── New-Gemini图像.ps1
 │   ├── New-Reve图像.ps1
-│   └── New-MAI图像.ps1
+│   ├── New-MAI图像.ps1
+│   └── New-SenseNova图像.ps1
 └── 内部/
     ├── 配置管理.ps1
     └── 工具函数.ps1

@@ -15,6 +15,7 @@ $模块目录 = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $模块目录 '函数\New-Gemini图像.ps1')
 . (Join-Path $模块目录 '函数\New-Reve图像.ps1')
 . (Join-Path $模块目录 '函数\New-MAI图像.ps1')
+. (Join-Path $模块目录 '函数\New-SenseNova图像.ps1')
 
 # 导出
-Export-ModuleMember -Function 'New-GPT图像', 'New-Gemini图像', 'New-Reve图像', 'New-MAI图像'
+Export-ModuleMember -Function 'New-GPT图像', 'New-Gemini图像', 'New-Reve图像', 'New-MAI图像', 'New-SenseNova图像'

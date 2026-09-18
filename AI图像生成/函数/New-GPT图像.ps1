@@ -1,7 +1,7 @@
 ﻿function New-GPT图像 {
     <#
     .SYNOPSIS
-        调用 gpt-image-2 模型生成图像。
+        调用 gpt-image 模型生成图像。
     .DESCRIPTION
         通过 OpenAI 兼容接口生成图像，自动处理 b64_json / url 两种返回形式。
         密钥、基础地址与模型以 DPAPI 加密记住。
@@ -21,7 +21,7 @@
     .PARAMETER 尺寸
         自定义 WxH 像素（auto 为默认）。需满足：最长边 ≤3840、宽高均为 16 的倍数、长宽比 ≤3:1、总像素 655360~8294400。默认 auto。
     .PARAMETER 质量
-        low | medium | high | auto。默认 auto。
+        low | medium | high | xhigh | max | auto。默认 auto。
     .PARAMETER 输出路径
         输出文件路径。默认时间戳 PNG。
     .PARAMETER 超时秒数
@@ -62,11 +62,10 @@
         [string]$尺寸 = 'auto',
 
         [Parameter()]
-        [ValidateSet('low', 'medium', 'high', 'auto')]
         [string]$质量 = 'auto',
 
         [Parameter()]
-        [string]$输出路径 = ".\gpt-image-2_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
+        [string]$输出路径 = ".\gpt-image_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
         [Parameter()][int]$超时秒数 = 500,
 
