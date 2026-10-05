@@ -44,6 +44,15 @@
 	.提示 { font-size: 12px; color: #9399b2; margin: 2px 0 10px; }
 	.行 { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center; }
 	#状态区 { white-space: pre-wrap; font-size: 13px; min-height: 20px; }
+	/* 窄屏（手机）：标签与控件改为上下结构，两列网格在小屏会出界且浪费左侧对齐空间 */
+	@media (max-width: 640px) {
+		body { padding: 12px; }
+		.表单 { grid-template-columns: minmax(0, 1fr); gap: 6px 0; align-items: start; }
+		.表单 > label { margin-top: 8px; }
+		.自动宽, .下拉容器 { width: 100%; max-width: 100%; min-width: 0; justify-self: stretch; }
+		.下拉菜单 { max-width: calc(100vw - 24px); }
+		textarea { min-height: 90px; }
+	}
 	.成功 { color: #a6e3a1; } .警告 { color: #f9e2af; } .错误 { color: #f38ba8; }
 	#结果图 { max-width: 100%; border-radius: 10px; display: none; }
 </style>
