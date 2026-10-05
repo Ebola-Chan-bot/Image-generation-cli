@@ -1,0 +1,16 @@
+{
+	"name": "AI 图像生成网页版",
+	"short_name": "AI生图",
+	"description": "通过 OpenAI 兼容接口调用 GPT-Image 系列模型生成图像，支持参考图编辑与蒙版局部重绘",
+	"lang": "zh-CN",
+	"start_url": "./",
+	"scope": "./",
+	"display": "standalone",
+	"background_color": "#1e1e2e",
+	"theme_color": "#1e1e2e",
+	"icons": [
+		{ "src": "./图标192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "./图标512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "./图标512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	]
+}

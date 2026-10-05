@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'AI图像生成.psm1'
-    ModuleVersion     = '1.1.0'
+    ModuleVersion     = '1.2.0'
     GUID              = 'd47a8e3b-9f1c-4a62-b8e5-7c3d0f2a1e69'
     Author            = '埃博拉酱'
     CompanyName       = ''

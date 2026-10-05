@@ -122,23 +122,18 @@ New-SenseNova图像 -提示词 "水彩柴犬" -模型 'sensenova-u1.5-lite'
 - 参考图仅支持公网 URL 或本地文件（自动转带 `data:image/*;base64,` 前缀的 Data-URL，裸 base64 会被官方驳回）。
 - `n` 固定为 1（平台限制）；需要多张时多次调用。
 
+# 网页版（PWA）
+
+`docs/网页版/` 下是可直接部署到 GitHub Pages 的渐进式网页应用（PWA），通过 OpenAI 兼容接口调用 GPT-Image 系列模型，支持文生图、参考图编辑、蒙版局部重绘，可"安装到桌面"并离线打开外壳界面。
+
+## 部署方法
+
+仓库根的 `docs/` 即 GitHub Pages 站点源目录（设置 → Pages → Deploy from a branch → main / docs）。访问地址为 [https://ebola-chan-bot.github.io/Image-generation-cli/网页版](https://ebola-chan-bot.github.io/Image-generation-cli/网页版)，根路径会自动跳转；中文子目录由 GitHub Pages 百分号编码支持。若希望源目录本身为中文名，需改用 GitHub Actions 部署。
+
+## 使用说明
+
+浏览器打开页面后填写基础地址、API 密钥与模型名即可使用；密钥仅保存在本机浏览器 localStorage（勾选"记住密钥"时），请求直接从浏览器发往 API。若报"网络或跨域（CORS）"错误，说明该 API 服务不允许浏览器直连，请换支持 CORS 的中转站。尺寸本地预校验规则与命令行版一致（16 的倍数、最长边 ≤3840、比例 ≤3:1、总像素 655360~8294400）。
+
 # 凭据安全
 
 密钥使用 Windows DPAPI 加密存储在 `%LOCALAPPDATA%\Image-generation-cli\` 下，仅当前用户可解密。调用成功后自动记住。
-
-# 模块结构
-
-```
-AI图像生成/
-├── AI图像生成.psd1          # 模块清单
-├── AI图像生成.psm1          # 模块根
-├── 函数/
-│   ├── New-GPT图像.ps1
-│   ├── New-Gemini图像.ps1
-│   ├── New-Reve图像.ps1
-│   ├── New-MAI图像.ps1
-│   └── New-SenseNova图像.ps1
-└── 内部/
-    ├── 配置管理.ps1
-    └── 工具函数.ps1
-```

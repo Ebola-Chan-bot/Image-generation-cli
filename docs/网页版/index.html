@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1e1e2e">
+<link rel="manifest" href="./清单.webmanifest">
+<link rel="icon" href="./图标192.png">
+<link rel="apple-touch-icon" href="./图标192.png">
+<title>AI 图像生成网页版</title>
+<style>
+	body { margin: 0; padding: 24px; background: #1e1e2e; color: #cdd6f4; font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; }
+	.主容器 { display: block; max-width: 860px; margin: 0 auto; }
+	h1 { font-size: 22px; color: #89b4fa; }
+	.区块 { background: #313244; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+	.区块 h2 { font-size: 15px; margin: 0 0 12px; color: #a6adc8; }
+	/* 表单主体：标签列 + 控件列 两列网格，所有行左对齐 */
+	.表单 { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; align-items: center; }
+	.表单 > label { font-size: 13px; color: #a6adc8; text-align: left; }
+	input, textarea, select { background: #1e1e2e; color: #cdd6f4; border: 1px solid #585b70; border-radius: 6px; padding: 8px 10px; font-size: 14px; font-family: inherit; box-sizing: border-box; }
+	textarea { min-height: 110px; resize: vertical; width: 100%; }
+	/* 文本框随内容自适应拉长，直到能完整显示文本或到达容器允许的最大宽度 */
+	.自动宽 { justify-self: start; min-width: 12em; max-width: 100%; field-sizing: content; }
+	@supports not (field-sizing: content) { .自动宽 { width: 100%; } }
+	/* 自绘下拉菜单：绝对定位于输入框正下方（原生 datalist 弹层位置不可控） */
+	.下拉容器 { position: relative; justify-self: start; max-width: 100%; }
+	.下拉菜单 { position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: 86vw; background: #45475a; border: 1px solid #585b70; border-radius: 8px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45); z-index: 20; overflow: hidden; }
+	.下拉项 { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+	.下拉项:hover, .下拉项.选中 { background: #585b70; }
+	.下拉值 { color: #cdd6f4; font-size: 13px; }
+	.下拉时间 { color: #9399b2; font-size: 11px; }
+	input[type="checkbox"], input[type="radio"] { accent-color: #89b4fa; }
+	input[type="number"] { width: 7em; }
+	input[type="file"] { border: none; padding: 4px 0; }
+	.控件行 { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+	.控件列 { display: flex; flex-direction: column; gap: 8px; align-items: stretch; width: 100%; }
+	.禁用 { opacity: 0.45; }
+	.操作行 { margin-top: 14px; }
+	.按钮 { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px; padding: 11px 26px; font-size: 15px; font-weight: 600; cursor: pointer; }
+	.按钮:hover { background: #74c7ec; }
+	.按钮:disabled { background: #585b70; color: #a6adc8; cursor: not-allowed; }
+	.次按钮 { background: #45475a; color: #cdd6f4; border: none; border-radius: 8px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+	.次按钮:hover { background: #585b70; }
+	.提示 { font-size: 12px; color: #9399b2; margin: 2px 0 10px; }
+	.行 { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center; }
+	#状态区 { white-space: pre-wrap; font-size: 13px; min-height: 20px; }
+	.成功 { color: #a6e3a1; } .警告 { color: #f9e2af; } .错误 { color: #f38ba8; }
+	#结果图 { max-width: 100%; border-radius: 10px; display: none; }
+</style>
+</head>
+<body>
+<div class="主容器">
+<h1>AI 图像生成网页版</h1>
+<p class="提示">通过 OpenAI 兼容接口调用 GPT-Image 系列模型。密钥仅保存在本机浏览器 localStorage，请求直接从浏览器发往 API；若报"网络或跨域"错误，说明该 API 服务不允许浏览器直连（CORS），请换支持 CORS 的中转站。</p>
+
+<div class="区块">
+	<h2>连接</h2>
+	<div class="表单">
+		<label for="基础地址">基础地址</label>
+		<div class="下拉容器"><input id="基础地址" class="自动宽" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1"><div id="地址下拉" class="下拉菜单" hidden></div></div>
+		<label for="密钥">API 密钥</label>
+		<div class="控件行"><input id="密钥" type="password" class="自动宽" placeholder="sk-…"><label><input id="记住密钥" type="checkbox" checked> 记住密钥</label></div>
+		<label for="模型">模型</label>
+		<div class="下拉容器"><input id="模型" class="自动宽" placeholder="例：gpt-image-2.5-flare"><div id="模型下拉" class="下拉菜单" hidden></div></div>
+	</div>
+</div>
+
+<div class="区块">
+	<h2>生成</h2>
+	<div class="表单">
+		<label><input type="radio" name="提示来源" value="提示词" checked> 提示词</label>
+		<textarea id="提示词" placeholder="图像描述；有参考图时写编辑指令"></textarea>
+		<label><input type="radio" name="提示来源" value="提示文件"> 提示文件</label>
+		<div class="控件行" id="提示文件行"><input id="提示文件" type="file" accept=".txt,.md,text/plain"><span class="提示" id="提示文件名"></span></div>
+		<label for="宽">尺寸</label>
+		<div class="控件行"><span>宽</span><input id="宽" type="number" min="1" step="1"><span>×</span><span>高</span><input id="高" type="number" min="1" step="1"><label><input id="尺寸自动" type="checkbox" checked> 自动（auto）</label><span class="提示">宽高须为 16 的倍数，最长边 ≤3840，长宽比 ≤3:1，总像素 655360~8294400</span></div>
+		<label for="质量">质量</label>
+		<select id="质量">
+			<option value="auto" selected>auto</option>
+			<option value="low">low</option>
+			<option value="medium">medium</option>
+			<option value="high">high</option>
+			<option value="xhigh">xhigh（2.5 系列）</option>
+			<option value="max">max（2.5 系列）</option>
+		</select>
+		<label for="参考图列表">参考图</label>
+		<div class="控件列"><textarea id="参考图列表" rows="3" placeholder="每行一个：公网 URL 或本地文件路径"></textarea><div class="控件行"><button type="button" class="次按钮" id="选择参考图">选择文件…</button><input id="参考图文件" type="file" accept="image/*" multiple hidden><span class="提示">本地文件须用“选择文件”按钮登记（浏览器安全限制无法直接读取路径）；留空走文生图，有条目走图片编辑</span></div></div>
+		<label for="蒙版">蒙版</label>
+		<div class="控件行"><input id="蒙版" type="file" accept="image/png"><span class="提示">PNG，透明区域=要重画的地方，仅作用于第一张参考图</span></div>
+	</div>
+	<div class="控件行 操作行"><button class="按钮" id="生成按钮">生成图像</button></div>
+	<div id="状态区"></div>
+</div>
+
+<div class="区块" id="结果区" style="display:none">
+	<h2>结果</h2>
+	<div class="行"><button class="按钮" id="下载按钮">下载图像</button><span class="提示" id="结果信息"></span></div>
+	<img id="结果图" alt="生成结果">
+</div>
+</div>
+
+<script>
+'use strict';
+const 元素 = (编号) => document.getElementById(编号);
+
+// localStorage：地址历史（跟随记录密钥）与模型历史各最多 2 条，超出时清理最久没用的
+const 存储键 = { 地址历史: '网页版_地址历史', 模型历史: '网页版_模型历史', 记住: '网页版_记住密钥' };
+
+function 读取历史(键名) {
+	try { const 列表 = JSON.parse(localStorage.getItem(键名)); return Array.isArray(列表) ? 列表 : []; }
+	catch (读取异常) { return []; }
+}
+
+// 记录最近使用：同值去重后按时间倒序，只保留最近 2 条，超出时清理最久没用的
+function 记录历史(键名, 值字段, 值, 额外属性) {
+	const 列表 = 读取历史(键名).filter((项) => 项[值字段] !== 值);
+	列表.push(Object.assign({ [值字段]: 值, 上次使用: Date.now() }, 额外属性));
+	列表.sort((甲, 乙) => 乙.上次使用 - 甲.上次使用);
+	localStorage.setItem(键名, JSON.stringify(列表.slice(0, 2)));
+}
+
+// 自绘下拉菜单：挂在输入框正下方，每行显示历史值与上次使用时间；支持鼠标点选与方向键+回车
+function 挂接下拉菜单(输入id, 菜单id, 取条目, 选中时) {
+	const 输入框 = 元素(输入id);
+	const 菜单 = 元素(菜单id);
+	let 条目列表 = [];
+	let 当前索引 = -1;
+	const 关闭 = () => { 菜单.hidden = true; 当前索引 = -1; };
+	const 高亮 = () => { Array.from(菜单.children).forEach((行, 序号) => 行.classList.toggle('选中', 序号 === 当前索引)); };
+	const 打开 = (过滤) => {
+		// 聚焦时显示全部历史，键入时才按关键字过滤
+		const 关键字 = 过滤 ? 输入框.value.trim().toLowerCase() : '';
+		条目列表 = 取条目().filter((项) => !关键字 || 项.值.toLowerCase().indexOf(关键字) >= 0);
+		if (条目列表.length === 0) { return 关闭(); }
+		菜单.textContent = '';
+		for (const 项 of 条目列表) {
+			const 行 = document.createElement('div');
+			行.className = '下拉项';
+			const 值段 = document.createElement('span');
+			值段.className = '下拉值';
+			值段.textContent = 项.值;
+			const 时间段 = document.createElement('span');
+			时间段.className = '下拉时间';
+			时间段.textContent = '上次使用：' + new Date(项.时间).toLocaleString('zh-CN');
+			行.appendChild(值段);
+			行.appendChild(时间段);
+			行.addEventListener('mousedown', (事件) => {
+				事件.preventDefault();
+				选中时(项);
+				关闭();
+			});
+			菜单.appendChild(行);
+		}
+		菜单.hidden = false;
+		当前索引 = -1;
+	};
+	输入框.addEventListener('focus', () => 打开(false));
+	输入框.addEventListener('input', () => 打开(true));
+	输入框.addEventListener('blur', () => { window.setTimeout(关闭, 120); });
+	输入框.addEventListener('keydown', (事件) => {
+		if (事件.key === 'Escape') { return 关闭(); }
+		if (菜单.hidden) { if (事件.key === 'ArrowDown') { 打开(); } return; }
+		if (事件.key === 'ArrowDown') { 事件.preventDefault(); 当前索引 = Math.min(当前索引 + 1, 条目列表.length - 1); 高亮(); }
+		else if (事件.key === 'ArrowUp') { 事件.preventDefault(); 当前索引 = Math.max(当前索引 - 1, -1); 高亮(); }
+		else if (事件.key === 'Enter' && 当前索引 >= 0) { 事件.preventDefault(); 选中时(条目列表[当前索引]); 关闭(); }
+	});
+}
+挂接下拉菜单('基础地址', '地址下拉', () => 读取历史(存储键.地址历史).map((项) => ({ 值: 项.地址, 时间: 项.上次使用, 密钥: 项.密钥 })), (项) => {
+	元素('基础地址').value = 项.值;
+	if (项.密钥) { 元素('密钥').value = 项.密钥; }
+});
+挂接下拉菜单('模型', '模型下拉', () => 读取历史(存储键.模型历史).map((项) => ({ 值: 项.模型, 时间: 项.上次使用 })), (项) => {
+	元素('模型').value = 项.值;
+});
+
+// 选用已记录的地址时自动填充该地址跟随记录的密钥
+function 跟随地址填密钥() {
+	const 当前地址 = 元素('基础地址').value.trim();
+	const 条目 = 读取历史(存储键.地址历史).find((项) => 项.地址 === 当前地址);
+	if (条目 && 条目.密钥) { 元素('密钥').value = 条目.密钥; }
+}
+元素('基础地址').addEventListener('input', 跟随地址填密钥);
+元素('基础地址').addEventListener('change', 跟随地址填密钥);
+
+// 初始化：恢复最近使用的地址/密钥/模型
+(function 恢复配置() {
+	for (const 旧键 of ['网页版_基础地址', '网页版_密钥', '网页版_模型']) { localStorage.removeItem(旧键); }
+	const 地址历史 = 读取历史(存储键.地址历史);
+	if (地址历史.length > 0) {
+		元素('基础地址').value = 地址历史[0].地址;
+		if (地址历史[0].密钥) { 元素('密钥').value = 地址历史[0].密钥; }
+	}
+	const 模型历史 = 读取历史(存储键.模型历史);
+	if (模型历史.length > 0) { 元素('模型').value = 模型历史[0].模型; }
+	if (localStorage.getItem(存储键.记住) === 'false') { 元素('记住密钥').checked = false; }
+	更新提示来源();
+	更新尺寸可用性();
+})();
+
+function 显示状态(文本, 类型) {
+	const 状态 = 元素('状态区');
+	状态.textContent = 文本;
+	状态.className = 类型 || '';
+}
+
+// 尺寸本地预校验：16 的倍数、最长边 ≤3840、比例 ≤3:1、总像素 655360~8294400，与命令行版一致
+function 校验尺寸(值) {
+	if (值.toLowerCase() === 'auto') { return null; }
+	const 匹配 = /^(\d+)x(\d+)$/.exec(值.trim());
+	if (!匹配) { return '尺寸格式应为 auto 或 WxH（如 1536x1024）：' + 值; }
+	const 宽 = parseInt(匹配[1], 10), 高 = parseInt(匹配[2], 10);
+	if (宽 % 16 !== 0 || 高 % 16 !== 0) { return '宽高须为 16 的倍数：当前 ' + 宽 + 'x' + 高 + '（宽余 ' + (宽 % 16) + '、高余 ' + (高 % 16) + '）'; }
+	if (Math.max(宽, 高) > 3840) { return '最长边须 ≤3840 像素：当前 ' + 宽 + 'x' + 高; }
+	if (Math.max(宽, 高) / Math.min(宽, 高) > 3) { return '长短边之比须 ≤3:1：当前 ' + 宽 + 'x' + 高; }
+	const 总像素 = 宽 * 高;
+	if (总像素 < 655360 || 总像素 > 8294400) { return '总像素须在 655360~8294400 之间（当前 ' + 总像素 + '）'; }
+	return null;
+}
+
+function 读取提示文件() {
+	return new Promise((解析) => {
+		const 文件 = 元素('提示文件').files[0];
+		if (!文件) { return 解析(null); }
+		const 读取器 = new FileReader();
+		读取器.onload = () => 解析(String(读取器.result).trim());
+		读取器.readAsText(文件, 'utf-8');
+	});
+}
+
+// 提示词与提示文件互斥：单选钮决定当前生效的输入方式，另一侧置灰禁用
+function 更新提示来源() {
+	const 提示词启用 = document.querySelector('input[name="提示来源"]:checked').value === '提示词';
+	元素('提示词').disabled = !提示词启用;
+	元素('提示文件').disabled = 提示词启用;
+	元素('提示词').classList.toggle('禁用', !提示词启用);
+	元素('提示文件行').classList.toggle('禁用', 提示词启用);
+}
+document.querySelectorAll('input[name="提示来源"]').forEach((单选) => 单选.addEventListener('change', 更新提示来源));
+元素('提示词').addEventListener('focus', () => {
+	document.querySelector('input[name="提示来源"][value="提示词"]').checked = true;
+	更新提示来源();
+});
+元素('提示文件行').addEventListener('click', () => {
+	document.querySelector('input[name="提示来源"][value="提示文件"]').checked = true;
+	更新提示来源();
+});
+元素('提示文件').addEventListener('change', () => {
+	元素('提示文件名').textContent = 元素('提示文件').files[0] ? 元素('提示文件').files[0].name : '';
+});
+
+// 尺寸：勾选"自动"时禁用宽高输入框
+function 更新尺寸可用性() {
+	const 自动 = 元素('尺寸自动').checked;
+	元素('宽').disabled = 自动;
+	元素('高').disabled = 自动;
+}
+元素('尺寸自动').addEventListener('change', 更新尺寸可用性);
+
+// 参考图列表：每行一个公网 URL 或本地文件路径；本地文件靠"选择文件"按钮登记后按文件名匹配上传
+function 解析参考图() {
+	const 行列表 = 元素('参考图列表').value.split('\n').map((行) => 行.trim()).filter(Boolean);
+	const 已选文件 = Array.from(元素('参考图文件').files);
+	const 条目列表 = [];
+	for (const 行 of 行列表) {
+		if (/^https?:\/\//i.test(行)) { 条目列表.push({ 类型: 'URL', 值: 行 }); continue; }
+		const 文件名 = 行.replace(/\\/g, '/').split('/').pop();
+		const 文件 = 已选文件.find((项) => 项.name === 文件名);
+		if (文件) { 条目列表.push({ 类型: '文件', 文件: 文件 }); }
+		else {
+			throw new Error('浏览器安全限制无法读取本地路径「' + 行 + '」：请点"选择文件"按钮选择该文件（会以文件名登记到列表），或改用公网 URL。');
+		}
+	}
+	return 条目列表;
+}
+元素('选择参考图').addEventListener('click', () => 元素('参考图文件').click());
+元素('参考图文件').addEventListener('change', () => {
+	for (const 文件 of 元素('参考图文件').files) {
+		const 行列表 = 元素('参考图列表').value.split('\n').map((行) => 行.trim());
+		if (!行列表.includes(文件.name)) {
+			元素('参考图列表').value = (元素('参考图列表').value.trimEnd() + '\n' + 文件.name).replace(/^\n/, '');
+		}
+	}
+});
+
+// 下载：优先把结果转为 blob 触发保存；url 模式跨域取不到 blob 时退化为新窗口打开
+function 下载图像(来源, 文件名) {
+	fetch(来源).then((响应) => 响应.blob()).then((块) => {
+		const 链接 = document.createElement('a');
+		链接.href = URL.createObjectURL(块);
+		链接.download = 文件名;
+		链接.click();
+		URL.revokeObjectURL(链接.href);
+	}).catch(() => { window.open(来源, '_blank'); });
+}
+
+async function 生成图像() {
+	const 密钥值 = 元素('密钥').value.trim();
+	const 模型值 = 元素('模型').value.trim();
+	// 与命令行版一致：基础地址缺 /vN 后缀时自动补 /v1
+	let 基础 = 元素('基础地址').value.trim().replace(/\/+$/, '');
+	if (!/\/v\d+$/.test(基础)) { 基础 += '/v1'; }
+	if (!密钥值) { return 显示状态('请先填写 API 密钥。', '错误'); }
+	if (!模型值) { return 显示状态('请先填写模型名。', '错误'); }
+	// 提示词与提示文件互斥，按单选钮取其一
+	const 来源 = document.querySelector('input[name="提示来源"]:checked').value;
+	let 提示词值 = '';
+	if (来源 === '提示词') {
+		提示词值 = 元素('提示词').value.trim();
+		if (!提示词值) { return 显示状态('请填写提示词（或切换到"提示文件"）。', '错误'); }
+	}
+	else {
+		if (!元素('提示文件').files[0]) { return 显示状态('已选"提示文件"但尚未选择文件。', '错误'); }
+		提示词值 = await 读取提示文件();
+		if (!提示词值) { return 显示状态('提示文件内容为空。', '错误'); }
+	}
+	// 尺寸：勾选"自动"发送 auto，否则拼成 WxH 再走四规则校验
+	let 尺寸值 = 'auto';
+	if (!元素('尺寸自动').checked) {
+		const 宽值 = 元素('宽').value.trim();
+		const 高值 = 元素('高').value.trim();
+		if (!/^\d+$/.test(宽值) || !/^\d+$/.test(高值)) { return 显示状态('尺寸的宽和高须填写正整数（或勾选"自动"）。', '错误'); }
+		尺寸值 = 宽值 + 'x' + 高值;
+	}
+	const 尺寸错误 = 校验尺寸(尺寸值);
+	if (尺寸错误) { return 显示状态(尺寸错误, '错误'); }
+	let 参考图条目;
+	try { 参考图条目 = 解析参考图(); }
+	catch (解析异常) { return 显示状态(解析异常.message, '错误'); }
+
+	const 有蒙版 = 元素('蒙版').files.length > 0;
+
+	显示状态('正在生成图像，通常需要数十秒到几分钟，请保持页面打开…', '警告');
+	元素('生成按钮').disabled = true;
+	try {
+		let 响应;
+		if (参考图条目.length > 0 || 有蒙版) {
+			// 有输入图走 images/edits 的 multipart 表单
+			const 表单 = new FormData();
+			表单.append('model', 模型值);
+			表单.append('prompt', 提示词值);
+			表单.append('n', '1');
+			表单.append('moderation', 'low');
+			if (尺寸值 !== 'auto') { 表单.append('size', 尺寸值); }
+			if (元素('质量').value !== 'auto') { 表单.append('quality', 元素('质量').value); }
+			if (有蒙版) { 表单.append('mask', 元素('蒙版').files[0]); }
+			const 字段名 = 参考图条目.length > 1 ? 'image[]' : 'image';
+			for (const 条目 of 参考图条目) {
+				if (条目.类型 === 'URL') { 表单.append(字段名, 条目.值); }
+				else { 表单.append(字段名, 条目.文件, 条目.文件.name); }
+			}
+			响应 = await fetch(基础 + '/images/edits', { method: 'POST', headers: { 'Authorization': 'Bearer ' + 密钥值 }, body: 表单 });
+		}
+		else {
+			const 请求体 = { model: 模型值, prompt: 提示词值, n: 1, moderation: 'low' };
+			if (尺寸值 !== 'auto') { 请求体.size = 尺寸值; }
+			if (元素('质量').value !== 'auto') { 请求体.quality = 元素('质量').value; }
+			响应 = await fetch(基础 + '/images/generations', { method: 'POST', headers: { 'Authorization': 'Bearer ' + 密钥值, 'Content-Type': 'application/json' }, body: JSON.stringify(请求体) });
+		}
+		const 响应文本 = await 响应.text();
+		if (!响应.ok) {
+			throw new Error('HTTP ' + 响应.status + '：' + 响应文本);
+		}
+		let 结果;
+		try { 结果 = JSON.parse(响应文本); }
+		catch (解析异常) {
+			throw new Error('API 返回的不是 JSON（通常是基础地址不对或访问到了网页而非接口；地址应类似 https://…/v1）。前 300 字符预览：\n' + 响应文本.slice(0, 300));
+		}
+		const 图像 = (结果.data && 结果.data[0]) || {};
+		if (图像.b64_json) {
+			元素('结果图').src = 'data:image/png;base64,' + 图像.b64_json;
+			元素('下载按钮').onclick = () => 下载图像(元素('结果图').src, '生成图像_' + Date.now() + '.png');
+		}
+		else if (图像.url) {
+			元素('结果图').src = 图像.url;
+			元素('下载按钮').onclick = () => 下载图像(图像.url, '生成图像_' + Date.now() + '.png');
+		}
+		else { throw new Error('响应中没有 b64_json 也没有 url：' + JSON.stringify(结果).slice(0, 500)); }
+		元素('结果图').style.display = 'block';
+		元素('结果区').style.display = '';
+		const 提示信息 = [];
+		if (图像.revised_prompt) { 提示信息.push('改写提示词：' + 图像.revised_prompt); }
+		if (结果.usage) { 提示信息.push('用量：' + JSON.stringify(结果.usage)); }
+		元素('结果信息').textContent = 提示信息.join('　|　');
+		// 生成成功后记录地址（含对应密钥）与模型的最近使用历史，供下拉选择并自动填充
+		记录历史(存储键.地址历史, '地址', 元素('基础地址').value.trim(), { 密钥: 元素('记住密钥').checked ? 密钥值 : '' });
+		记录历史(存储键.模型历史, '模型', 模型值, {});
+		localStorage.setItem(存储键.记住, String(元素('记住密钥').checked));
+		显示状态('生成完成，可点击"下载图像"保存。', '成功');
+	}
+	catch (异常) {
+		const 消息 = 异常 && 异常.message ? 异常.message : String(异常);
+		if (异常 instanceof TypeError) {
+			显示状态('网络或跨域（CORS）错误：请求未能到达 API。\n可能原因：该服务不允许浏览器直连、网络不通、HTTPS 证书问题。\n详情：' + 消息, '错误');
+		}
+		else { 显示状态('生成失败：' + 消息, '错误'); }
+	}
+	finally { 元素('生成按钮').disabled = false; }
+}
+
+元素('生成按钮').addEventListener('click', 生成图像);
+
+// 注册 Service Worker 提供离线外壳缓存
+if ('serviceWorker' in navigator) {
+		window.addEventListener('load', () => { navigator.serviceWorker.register('./服务工作者.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
