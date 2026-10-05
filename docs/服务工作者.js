@@ -1,5 +1,5 @@
 // Service Worker：缓存应用外壳供离线使用，API 请求始终走网络不缓存
-const 外壳缓存名 = 'ai图像生成网页版-外壳-v3';
+const 外壳缓存名 = 'ai图像生成网页版-外壳-v4';
 const 外壳文件 = ['./', './index.html', './清单.webmanifest', './图标192.png', './图标512.png'];
 
 self.addEventListener('install', (事件) => {

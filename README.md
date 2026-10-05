@@ -124,11 +124,11 @@ New-SenseNova图像 -提示词 "水彩柴犬" -模型 'sensenova-u1.5-lite'
 
 # 网页版（PWA）
 
-`docs/网页版/` 下是可直接部署到 GitHub Pages 的渐进式网页应用（PWA），通过 OpenAI 兼容接口调用 GPT-Image 系列模型，支持文生图、参考图编辑、蒙版局部重绘，可"安装到桌面"并离线打开外壳界面。
+`docs/` 下是可直接部署到 GitHub Pages 的渐进式网页应用（PWA），通过 OpenAI 兼容接口调用 GPT-Image 系列模型，支持文生图、参考图编辑、蒙版局部重绘，可"安装到桌面"并离线打开外壳界面。
 
 ## 部署方法
 
-仓库根的 `docs/` 即 GitHub Pages 站点源目录（设置 → Pages → Deploy from a branch → main / docs）。访问地址为 [https://ebola-chan-bot.github.io/Image-generation-cli/网页版](https://ebola-chan-bot.github.io/Image-generation-cli/网页版)，根路径会自动跳转；中文子目录由 GitHub Pages 百分号编码支持。若希望源目录本身为中文名，需改用 GitHub Actions 部署。
+仓库根的 `docs/` 即 GitHub Pages 站点源目录（设置 → Pages → Deploy from a branch → main / docs），网页应用直接位于站点根。访问地址为 [https://ebola-chan-bot.github.io/Image-generation-cli/](https://ebola-chan-bot.github.io/Image-generation-cli/)。
 
 ## 使用说明
 
