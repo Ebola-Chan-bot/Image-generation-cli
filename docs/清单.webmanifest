@@ -3,6 +3,7 @@
 	"short_name": "AI生图",
 	"description": "通过 OpenAI 兼容接口调用 GPT-Image 系列模型生成图像，支持参考图编辑与蒙版局部重绘",
 	"lang": "zh-CN",
+	"id": "AI 图像生成网页版",
 	"start_url": "./",
 	"scope": "./",
 	"display": "standalone",
