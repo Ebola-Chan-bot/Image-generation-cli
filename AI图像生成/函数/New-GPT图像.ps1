@@ -23,7 +23,7 @@
     .PARAMETER 质量
         low | medium | high | xhigh | max | auto。默认 auto。
     .PARAMETER 输出路径
-        输出文件路径。默认时间戳 PNG。
+        输出文件路径或目录。传入目录时自动生成 gpt-image_时间戳.png。默认时间戳 PNG。
     .PARAMETER 超时秒数
         超时时间，默认 500。
     .PARAMETER 参考图
@@ -231,6 +231,14 @@
     $改写 = $图像.PSObject.Properties['revised_prompt']
     if ($改写 -and $改写.Value) { Write-Host "API 返回的 revised_prompt（由上游服务改写，脚本未修改提示词）: $($改写.Value)" -ForegroundColor DarkGray }
 
+    # 目录路径自动生成带扩展名的文件名，避免把图像保存为无扩展名文件
+    $输出是目录 = (Test-Path -LiteralPath $输出路径 -PathType Container) -or
+        $输出路径.EndsWith([IO.Path]::DirectorySeparatorChar) -or
+        $输出路径.EndsWith([IO.Path]::AltDirectorySeparatorChar) -or
+        -not [IO.Path]::GetExtension($输出路径)
+    if ($输出是目录) {
+        $输出路径 = Join-Path $输出路径 "gpt-image_$(Get-Date -Format 'yyyyMMdd_HHmmss').png"
+    }
     $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
     $b64属性 = $图像.PSObject.Properties['b64_json']
     if ($b64属性 -and $b64属性.Value) {
@@ -244,6 +252,5 @@
         else { throw "响应中既没有 b64_json 也没有 url：$($图像 | ConvertTo-Json -Depth 5 -Compress)" }
     }
 
-    Write-Host "图像已保存: $解析后输出" -ForegroundColor Green
     return $解析后输出
 }
