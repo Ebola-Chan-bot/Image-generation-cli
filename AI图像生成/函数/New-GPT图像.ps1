@@ -229,7 +229,7 @@
     }
     $图像 = $数据属性.Value[0]
     $改写 = $图像.PSObject.Properties['revised_prompt']
-    if ($改写 -and $改写.Value) { Write-Host "改写后的提示词: $($改写.Value)" -ForegroundColor DarkGray }
+    if ($改写 -and $改写.Value) { Write-Host "API 返回的 revised_prompt（由上游服务改写，脚本未修改提示词）: $($改写.Value)" -ForegroundColor DarkGray }
 
     $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
     $b64属性 = $图像.PSObject.Properties['b64_json']

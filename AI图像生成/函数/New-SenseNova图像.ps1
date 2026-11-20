@@ -283,10 +283,10 @@
 	$字节 = [Convert]::FromBase64String($b64属性.Value)
 	[System.IO.File]::WriteAllBytes($解析后输出, $字节)
 
-	# 提示改写信息
+	# 提示改写信息由 API 返回，明确标注上游来源
 	$改写属性 = $图像.PSObject.Properties['revised_prompt']
 	if ($改写属性 -and $改写属性.Value) {
-		Write-Host "改写后的提示词: $($改写属性.Value)" -ForegroundColor DarkGray
+		Write-Host "API 返回的 revised_prompt（由上游服务改写，脚本未修改提示词）: $($改写属性.Value)" -ForegroundColor DarkGray
 	}
 
 	Write-Host "图像已保存: $解析后输出" -ForegroundColor Green

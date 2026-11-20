@@ -387,7 +387,7 @@ async function 生成图像() {
 		元素('结果图').style.display = 'block';
 		元素('结果区').style.display = '';
 		const 提示信息 = [];
-		if (图像.revised_prompt) { 提示信息.push('改写提示词：' + 图像.revised_prompt); }
+		if (图像.revised_prompt) { 提示信息.push('API 返回的 revised_prompt（由上游服务改写，网页未修改提示词）：' + 图像.revised_prompt); }
 		if (结果.usage) { 提示信息.push('用量：' + JSON.stringify(结果.usage)); }
 		元素('结果信息').textContent = 提示信息.join('　|　');
 		// 生成成功后记录地址（含对应密钥）与模型的最近使用历史，供下拉选择并自动填充
