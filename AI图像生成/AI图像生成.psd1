@@ -51,7 +51,7 @@ New-SenseNova图像 —— 商汤日日新 U1 系列（默认官网 + SenseNova 
             Tags         = @('AI', 'Image', 'GPT', 'Gemini', 'Reve', 'MAI', 'SenseNova', '图像生成', '中文')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ProjectUri   = 'https://github.com/Ebola-Chan-bot/Image-generation-cli'
-            ReleaseNotes = '新增 New-SenseNova图像：通过商汤日日新图像接口调用 SenseNova U1 系列（默认 SenseNova U1 Pro）；新增 U1 Pro 邀测未开通时的模型降级提示'
+            ReleaseNotes = ''
         }
     }
 }
