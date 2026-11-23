@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'AI图像生成.psm1'
-    ModuleVersion     = '1.2.0'
+    ModuleVersion     = '1.3.0'
     GUID              = 'd47a8e3b-9f1c-4a62-b8e5-7c3d0f2a1e69'
     Author            = '埃博拉酱'
     CompanyName       = ''
@@ -51,7 +51,7 @@ New-SenseNova图像 —— 商汤日日新 U1 系列（默认官网 + SenseNova 
             Tags         = @('AI', 'Image', 'GPT', 'Gemini', 'Reve', 'MAI', 'SenseNova', '图像生成', '中文')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ProjectUri   = 'https://github.com/Ebola-Chan-bot/Image-generation-cli'
-            ReleaseNotes = ''
+            ReleaseNotes = '新增 GPT Image 2.6 能力：复杂度参数、GIF 动图（帧数/帧时长）、SVG 矢量输出与标注图（与蒙版互斥），并按输出格式自动补全 png/gif/svg 扩展名（用户显式扩展名优先）'
         }
     }
 }

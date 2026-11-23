@@ -22,8 +22,23 @@
         自定义 WxH 像素（auto 为默认）。需满足：最长边 ≤3840、宽高均为 16 的倍数、长宽比 ≤3:1、总像素 655360~8294400。默认 auto。
     .PARAMETER 质量
         low | medium | high | xhigh | max | auto。默认 auto。
+    .PARAMETER 复杂度
+        low | medium | high。控制生成前场景规划的算力投入，与质量独立（GPT Image 2.6 新参数）。默认不指定。
+    .PARAMETER 帧数
+        GIF 动图帧数（2~16）。默认不指定（API 默认 9 帧）。指定此参数或帧时长即进入 GIF 模式。
+    .PARAMETER 帧时长毫秒
+        GIF 每帧停留毫秒数（20~2000，按 10ms 取整）。默认不指定（API 默认 200ms）。
+    .PARAMETER SVG模型
+        指定此参数即进入 SVG 矢量图模式。值为负责编写 SVG 代码的文本模型 ID（如 gpt-6-luna）。
+        仅支持文生图（不支持参考图编辑）。n 固定为 1。
+    .PARAMETER SVG推理力度
+        SVG 作者模型的推理力度（如 low / medium / high）。默认不指定。
+    .PARAMETER 标注图
+        标注层图片（透明 PNG），在上面圈出要改的区域（GPT Image 2.5/2.6 改图专用）。
+        不能与 -蒙版 同时使用。
     .PARAMETER 输出路径
-        输出文件路径或目录。传入目录时自动生成 gpt-image_时间戳.png。默认时间戳 PNG。
+        输出文件路径或目录。传入目录时自动生成 gpt-image_时间戳.{png|gif|svg}。
+        用户显式指定的扩展名优先（即使实际类型不符）；未指定扩展名时按输出格式自动补全。
     .PARAMETER 超时秒数
         超时时间，默认 500。
     .PARAMETER 参考图
@@ -64,6 +79,14 @@
         [Parameter()]
         [string]$质量 = 'auto',
 
+        [Parameter()][string]$复杂度 = '',
+
+        [Parameter()][int]$帧数 = 0,
+        [Parameter()][int]$帧时长毫秒 = 0,
+
+        [Parameter()][string]$SVG模型 = '',
+        [Parameter()][string]$SVG推理力度 = '',
+
         [Parameter()]
         [string]$输出路径 = ".\gpt-image_$(Get-Date -Format 'yyyyMMdd_HHmmss').png",
 
@@ -73,7 +96,9 @@
         [ValidateNotNullOrEmpty()]
         [string[]]$参考图,
 
-        [Parameter()][string]$蒙版 = ''
+        [Parameter()][string]$蒙版 = '',
+
+        [Parameter()][string]$标注图 = ''
     )
 
     $配置路径 = Join-Path $env:LOCALAPPDATA 'Image-generation-cli\AI图像生成-GPT配置.xml'
@@ -109,6 +134,22 @@
         $蒙版数据 = Get-图像数据 -来源 $蒙版
     }
 
+    # 标注图（透明 PNG 标注层，与蒙版互斥）
+    if ($标注图 -and $蒙版) { throw "标注图与蒙版不能同时使用。" }
+    $标注数据 = $null
+    if ($标注图) {
+        $标注数据 = Get-图像数据 -来源 $标注图
+    }
+
+    # GPT Image 2.6 模式检测：SVG 由 -SVG模型 触发，GIF 由输出扩展名 .gif 或帧参数触发
+    $输出扩展名 = [IO.Path]::GetExtension($输出路径).ToLowerInvariant()
+    $是SVG模式 = -not [string]::IsNullOrEmpty($SVG模型)
+    $是GIF模式 = -not $是SVG模式 -and ($输出扩展名 -eq '.gif' -or $帧数 -gt 0 -or $帧时长毫秒 -gt 0)
+    if ($是SVG模式 -and $参考图数据列表.Count -gt 0) { throw "SVG 输出仅支持文生图，不支持参考图编辑。" }
+    if ($帧数 -gt 0 -and ($帧数 -lt 2 -or $帧数 -gt 16)) { throw "帧数须为 2~16 的整数（当前 $帧数）。" }
+    if ($帧时长毫秒 -gt 0 -and ($帧时长毫秒 -lt 20 -or $帧时长毫秒 -gt 2000)) { throw "帧时长须为 20~2000 毫秒（当前 $帧时长毫秒）。" }
+    if ($复杂度 -and $复杂度 -notin @('low', 'medium', 'high')) { throw "复杂度须为 low / medium / high（当前 $复杂度）。" }
+
     # 构造请求
     if ($参考图数据列表.Count -gt 0) {
         Add-Type -AssemblyName System.Net.Http
@@ -143,10 +184,21 @@
             $表单.Add([System.Net.Http.StringContent]::new('low'), 'moderation')
             if ($尺寸 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($尺寸), 'size') }
             if ($质量 -ne 'auto') { $表单.Add([System.Net.Http.StringContent]::new($质量), 'quality') }
+            if ($复杂度) { $表单.Add([System.Net.Http.StringContent]::new($复杂度), 'complexity') }
+            if ($是GIF模式) {
+                $表单.Add([System.Net.Http.StringContent]::new('gif'), 'output_format')
+                if ($帧数 -gt 0) { $表单.Add([System.Net.Http.StringContent]::new($帧数.ToString()), 'frame_count') }
+                if ($帧时长毫秒 -gt 0) { $表单.Add([System.Net.Http.StringContent]::new($帧时长毫秒.ToString()), 'frame_duration_ms') }
+            }
             if ($蒙版数据) {
                 $mc = [System.Net.Http.ByteArrayContent]::new($蒙版数据.字节)
                 $mc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
                 $表单.Add($mc, 'mask', $蒙版数据.文件名)
+            }
+            if ($标注数据) {
+                $mkc = [System.Net.Http.ByteArrayContent]::new($标注数据.字节)
+                $mkc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
+                $表单.Add($mkc, 'markup', $标注数据.文件名)
             }
             $字段名 = $(if ($参考图数据列表.Count -gt 1) { 'image[]' } else { 'image' })
             foreach ($d in $参考图数据列表) {
@@ -196,6 +248,18 @@
         $请求体 = @{ model = $凭据.模型; prompt = $提示词; n = 1; moderation = 'low' }
         if ($尺寸 -ne 'auto') { $请求体['size'] = $尺寸 }
         if ($质量 -ne 'auto') { $请求体['quality'] = $质量 }
+        if ($复杂度) { $请求体['complexity'] = $复杂度 }
+        if ($是SVG模式) {
+            $请求体['output_format'] = 'svg'
+            $svg对象 = @{ model = $SVG模型 }
+            if ($SVG推理力度) { $svg对象['reasoning'] = @{ effort = $SVG推理力度 } }
+            $请求体['svg'] = $svg对象
+        }
+        elseif ($是GIF模式) {
+            $请求体['output_format'] = 'gif'
+            if ($帧数 -gt 0) { $请求体['frame_count'] = $帧数 }
+            if ($帧时长毫秒 -gt 0) { $请求体['frame_duration_ms'] = $帧时长毫秒 }
+        }
         $请求体 = $请求体 | ConvertTo-Json -Depth 5
 
         Write-Host "正在调用 $($凭据.模型) 生成图像 ..." -ForegroundColor Cyan
@@ -231,13 +295,19 @@
     $改写 = $图像.PSObject.Properties['revised_prompt']
     if ($改写 -and $改写.Value) { Write-Host "API 返回的 revised_prompt（由上游服务改写，脚本未修改提示词）: $($改写.Value)" -ForegroundColor DarkGray }
 
-    # 目录路径自动生成带扩展名的文件名，避免把图像保存为无扩展名文件
+    # 输出扩展名：用户显式指定的扩展名优先（即使实际类型不符）；未指定时按输出格式自动补全
     $输出是目录 = (Test-Path -LiteralPath $输出路径 -PathType Container) -or
         $输出路径.EndsWith([IO.Path]::DirectorySeparatorChar) -or
-        $输出路径.EndsWith([IO.Path]::AltDirectorySeparatorChar) -or
-        -not [IO.Path]::GetExtension($输出路径)
-    if ($输出是目录) {
-        $输出路径 = Join-Path $输出路径 "gpt-image_$(Get-Date -Format 'yyyyMMdd_HHmmss').png"
+        $输出路径.EndsWith([IO.Path]::AltDirectorySeparatorChar)
+    $用户指定扩展名 = -not $输出是目录 -and -not [string]::IsNullOrEmpty([IO.Path]::GetExtension($输出路径))
+    if (-not $用户指定扩展名) {
+        $自动扩展名 = if ($是SVG模式) { '.svg' } elseif ($是GIF模式) { '.gif' } else { '.png' }
+        if ($输出是目录) {
+            $输出路径 = Join-Path $输出路径 "gpt-image_$(Get-Date -Format 'yyyyMMdd_HHmmss')$自动扩展名"
+        }
+        else {
+            $输出路径 = $输出路径 + $自动扩展名
+        }
     }
     $解析后输出 = Resolve-输出路径 -输出路径 $输出路径
     $b64属性 = $图像.PSObject.Properties['b64_json']

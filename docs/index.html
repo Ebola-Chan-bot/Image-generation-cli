@@ -92,10 +92,23 @@
 			<option value="xhigh">xhigh（2.5 系列）</option>
 			<option value="max">max（2.5 系列）</option>
 		</select>
+		<label for="复杂度">复杂度</label>
+		<select id="复杂度">
+			<option value="" selected>不指定</option>
+			<option value="low">low</option>
+			<option value="medium">medium</option>
+			<option value="high">high</option>
+		</select>
+		<label>GIF 动图</label>
+		<div class="控件行"><label><input id="GIF模式" type="checkbox"> 启用 GIF 输出</label><span id="GIF参数" hidden><span>帧数</span><input id="帧数" type="number" min="2" max="16" placeholder="默认9" style="width:5em"><span>帧时长(ms)</span><input id="帧时长毫秒" type="number" min="20" max="2000" step="10" placeholder="默认200" style="width:6em"></span></div>
+		<label for="SVG模型">SVG 模型</label>
+		<div class="控件列"><input id="SVG模型" class="自动宽" placeholder="留空不生成 SVG；填文本模型 ID（如 gpt-6-luna）即为 SVG 模式"><div class="控件行" id="SVG推理行" hidden><span>推理力度</span><input id="SVG推理力度" placeholder="不指定（如 low/medium/high）"></div></div>
 		<label for="参考图列表">参考图</label>
 		<div class="控件列"><textarea id="参考图列表" rows="3" placeholder="每行一个：公网 URL 或本地文件路径"></textarea><div class="控件行"><button type="button" class="次按钮" id="选择参考图">选择文件…</button><input id="参考图文件" type="file" accept="image/*" multiple hidden><span class="提示">本地文件须用“选择文件”按钮登记（浏览器安全限制无法直接读取路径）；留空走文生图，有条目走图片编辑</span></div></div>
 		<label for="蒙版">蒙版</label>
 		<div class="控件行"><input id="蒙版" type="file" accept="image/png"><span class="提示">PNG，透明区域=要重画的地方，仅作用于第一张参考图</span></div>
+		<label for="标注图">标注图</label>
+		<div class="控件行"><input id="标注图" type="file" accept="image/png"><span class="提示">透明 PNG 标注层，圈出要改的区域（2.5/2.6 改图专用，与蒙版互斥）</span></div>
 	</div>
 	<div class="控件行 操作行"><button class="按钮" id="生成按钮">生成图像</button></div>
 	<div id="状态区"></div>
@@ -337,6 +350,18 @@ async function 生成图像() {
 	catch (解析异常) { return 显示状态(解析异常.message, '错误'); }
 
 	const 有蒙版 = 元素('蒙版').files.length > 0;
+	const 有标注图 = 元素('标注图').files.length > 0;
+	if (有蒙版 && 有标注图) { return 显示状态('标注图与蒙版不能同时使用。', '错误'); }
+
+	// GPT Image 2.6 模式检测：SVG 由 SVG模型 触发，GIF 由勾选或帧参数触发
+	const SVG模型值 = 元素('SVG模型').value.trim();
+	const 是SVG模式 = SVG模型值.length > 0;
+	const GIF启用 = 元素('GIF模式').checked;
+	const 帧数值 = 元素('帧数').value.trim();
+	const 帧时长值 = 元素('帧时长毫秒').value.trim();
+	const 是GIF模式 = !是SVG模式 && (GIF启用 || 帧数值 || 帧时长值);
+	const 复杂度值 = 元素('复杂度').value;
+	if (是SVG模式 && 参考图条目.length > 0) { return 显示状态('SVG 输出仅支持文生图，不支持参考图编辑。', '错误'); }
 
 	显示状态('正在生成图像，通常需要数十秒到几分钟，请保持页面打开…', '警告');
 	元素('生成按钮').disabled = true;
@@ -351,7 +376,14 @@ async function 生成图像() {
 			表单.append('moderation', 'low');
 			if (尺寸值 !== 'auto') { 表单.append('size', 尺寸值); }
 			if (元素('质量').value !== 'auto') { 表单.append('quality', 元素('质量').value); }
+			if (复杂度值) { 表单.append('complexity', 复杂度值); }
+			if (是GIF模式) {
+				表单.append('output_format', 'gif');
+				if (帧数值) { 表单.append('frame_count', 帧数值); }
+				if (帧时长值) { 表单.append('frame_duration_ms', 帧时长值); }
+			}
 			if (有蒙版) { 表单.append('mask', 元素('蒙版').files[0]); }
+			if (有标注图) { 表单.append('markup', 元素('标注图').files[0]); }
 			const 字段名 = 参考图条目.length > 1 ? 'image[]' : 'image';
 			for (const 条目 of 参考图条目) {
 				if (条目.类型 === 'URL') { 表单.append(字段名, 条目.值); }
@@ -363,6 +395,19 @@ async function 生成图像() {
 			const 请求体 = { model: 模型值, prompt: 提示词值, n: 1, moderation: 'low' };
 			if (尺寸值 !== 'auto') { 请求体.size = 尺寸值; }
 			if (元素('质量').value !== 'auto') { 请求体.quality = 元素('质量').value; }
+			if (复杂度值) { 请求体.complexity = 复杂度值; }
+			if (是SVG模式) {
+				请求体.output_format = 'svg';
+				const svg对象 = { model: SVG模型值 };
+				const SVG推理值 = 元素('SVG推理力度').value.trim();
+				if (SVG推理值) { svg对象.reasoning = { effort: SVG推理值 }; }
+				请求体.svg = svg对象;
+			}
+			else if (是GIF模式) {
+				请求体.output_format = 'gif';
+				if (帧数值) { 请求体.frame_count = parseInt(帧数值, 10); }
+				if (帧时长值) { 请求体.frame_duration_ms = parseInt(帧时长值, 10); }
+			}
 			响应 = await fetch(基础 + '/images/generations', { method: 'POST', headers: { 'Authorization': 'Bearer ' + 密钥值, 'Content-Type': 'application/json' }, body: JSON.stringify(请求体) });
 		}
 		const 响应文本 = await 响应.text();
@@ -375,9 +420,11 @@ async function 生成图像() {
 			throw new Error('API 返回的不是 JSON（通常是基础地址不对或访问到了网页而非接口；地址应类似 https://…/v1）。前 300 字符预览：\n' + 响应文本.slice(0, 300));
 		}
 		const 图像 = (结果.data && 结果.data[0]) || {};
+		const 下载扩展名 = 是SVG模式 ? '.svg' : 是GIF模式 ? '.gif' : '.png';
+		const 图像MIME = 是SVG模式 ? 'image/svg+xml' : 是GIF模式 ? 'image/gif' : 'image/png';
 		if (图像.b64_json) {
-			元素('结果图').src = 'data:image/png;base64,' + 图像.b64_json;
-			元素('下载按钮').onclick = () => 下载图像(元素('结果图').src, '生成图像_' + Date.now() + '.png');
+			元素('结果图').src = 'data:' + 图像MIME + ';base64,' + 图像.b64_json;
+			元素('下载按钮').onclick = () => 下载图像(元素('结果图').src, '生成图像_' + Date.now() + 下载扩展名);
 		}
 		else if (图像.url) {
 			元素('结果图').src = 图像.url;
@@ -407,6 +454,10 @@ async function 生成图像() {
 }
 
 元素('生成按钮').addEventListener('click', 生成图像);
+
+// GIF/SVG 字段联动显示
+元素('GIF模式').addEventListener('change', () => { 元素('GIF参数').hidden = !元素('GIF模式').checked; });
+元素('SVG模型').addEventListener('input', () => { 元素('SVG推理行').hidden = !元素('SVG模型').value.trim(); });
 
 // 注册 Service Worker 提供离线外壳缓存
 if ('serviceWorker' in navigator) {
